@@ -1,0 +1,12 @@
+[gd_resource type="ShaderMaterial" format=3 uid="uid://c1xrus2bfddee"]
+
+[ext_resource type="Shader" uid="uid://6uo3vdony526" path="res://materials/dev_grid.gdshader" id="1_int8n"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_int8n")
+shader_parameter/color_dark = Color(0.24, 0.25, 0.27, 1)
+shader_parameter/color_light = Color(0.32, 0.33, 0.35, 1)
+shader_parameter/line_color = Color(0.55, 0.58, 0.62, 1)
+shader_parameter/cell_size = 1.0
+shader_parameter/line_px = 1.5
