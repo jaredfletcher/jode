@@ -147,6 +147,8 @@ func _update_crouch(delta: float) -> void:
 		target = 0.0
 
 	var rate := (1.0 / TIME_TO_DUCK) if target > duck_progress else (1.0 / TIME_TO_UNDUCK)
+	duck_progress = move_toward(duck_progress, target, rate * delta)
+
 	view_offset = move_toward(view_offset, 0.0, VIEW_SMOOTH * delta)
 
 	if not is_crouched and duck_progress >= 1.0:
