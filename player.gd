@@ -26,7 +26,9 @@ const TIME_TO_UNDUCK := 0.2
 const VIEW_SMOOTH := 3.0
 
 const HULL_DELTA := STAND_HEIGHT - CROUCH_HEIGHT
-const HULL_SHIFT := HULL_DELTA * 0.5
+const HULL_SHIFT := HULL_DELTA
+
+const JUMP_WINDOW := 0.51
 
 const M_YAW := 0.022
 
@@ -40,6 +42,8 @@ const M_YAW := 0.022
 @onready var capsule: CapsuleShape3D = collider.shape
 @onready var stand_check: ShapeCast3D = %StandCheck
 
+var jump_time := 0.0
+var last_pending := 0.0
 var duck_progress := 0.0
 var view_offset := 0.0
 
@@ -121,7 +125,6 @@ func _finish_duck() -> void:
 	collider.position.y = CROUCH_HEIGHT * 0.5
 	if not is_on_floor():
 		global_position.y += HULL_SHIFT
-		view_offset -= HULL_SHIFT
 		crouch_shifted = true
 
 
@@ -131,8 +134,19 @@ func _finish_unduck() -> void:
 	collider.position.y = STAND_HEIGHT * 0.5
 	if crouch_shifted:
 		global_position.y -= HULL_SHIFT
-		view_offset += HULL_SHIFT
 	crouch_shifted = false
+
+
+func _pending_shift(target: float) -> float:
+	if target >= 1.0 and not is_crouched:
+		return 0.0 if is_on_floor() else HULL_SHIFT
+	if target <= 0.0 and is_crouched:
+		return -HULL_SHIFT if crouch_shifted else 0.0
+	return 0.0
+
+
+func _spline(t: float) -> float:
+	return t * t * (3.0 - 2.0 * t)
 
 
 func _update_crouch(delta: float) -> void:
@@ -141,6 +155,13 @@ func _update_crouch(delta: float) -> void:
 			crouch_wanted = not crouch_wanted
 	else:
 		crouch_wanted = Input.is_action_pressed("crouch")
+
+	if crouch_wanted and not is_crouched and jump_time > 0.0 and not is_on_floor():
+		duck_progress = 1.0
+		_finish_duck()
+		last_pending = 0.0
+		camera.position.y = CROUCH_EYE + view_offset
+		return
 
 	var target := 1.0
 	if not crouch_wanted and (not is_crouched or _can_stand()):
@@ -151,12 +172,21 @@ func _update_crouch(delta: float) -> void:
 
 	view_offset = move_toward(view_offset, 0.0, VIEW_SMOOTH * delta)
 
+	var finished := false
 	if not is_crouched and duck_progress >= 1.0:
 		_finish_duck()
+		finished = true
 	elif is_crouched and duck_progress <= 0.0:
 		_finish_unduck()
+		finished = true
 
-	camera.position.y = lerpf(STAND_EYE, CROUCH_EYE, duck_progress) + view_offset
+	var pending := _pending_shift(target)
+	var blend := 1.0 - absf(target - duck_progress)
+	if not finished and pending != last_pending:
+		view_offset += (last_pending - pending) * blend
+	last_pending = pending
+
+	camera.position.y = lerpf(STAND_EYE, CROUCH_EYE, _spline(duck_progress)) + pending * blend + view_offset
 
 
 func _is_sprinting() -> bool:
@@ -172,6 +202,8 @@ func _current_max_speed() -> float:
 
 
 func _physics_process(delta: float) -> void:
+	velocity.y -= SV_GRAVITY * 0.5 * delta
+	jump_time = maxf(jump_time - delta, 0.0)
 	if is_on_floor():
 		crouch_shifted = false
 	_update_crouch(delta)
@@ -183,6 +215,7 @@ func _physics_process(delta: float) -> void:
 	var grounded := is_on_floor()
 
 	if grounded and jump_held:
+		jump_time = JUMP_WINDOW
 		velocity.y = JUMP_IMPULSE
 		grounded = false
 
@@ -191,7 +224,7 @@ func _physics_process(delta: float) -> void:
 		_apply_friction(delta)
 		_accelerate(wish_dir, max_speed, SV_ACCELERATE, delta)
 	else:
-		velocity.y -= SV_GRAVITY * delta
 		_air_accelerate(wish_dir, max_speed, SV_AIRACCELERATE, delta)
 
 	move_and_slide()
+	velocity.y -= SV_GRAVITY * 0.5 * delta
