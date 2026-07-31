@@ -2,13 +2,11 @@
 
 [ext_resource type="Script" uid="uid://c8sn37isawjfw" path="res://player.gd" id="1_4flbx"]
 
-[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_yf5fn"]
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_4flbx"]
 radius = 0.4
-height = 1.98
+height = 1.8
 
-[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_g4v7s"]
-radius = 0.38
-height = 0.9
+[sub_resource type="BoxShape3D" id="BoxShape3D_i3pqv"]
 
 [node name="Player" type="CharacterBody3D" unique_id=1276889450]
 script = ExtResource("1_4flbx")
@@ -17,10 +15,11 @@ auto_sprint = false
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1631429323]
 unique_name_in_owner = true
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
-shape = SubResource("CapsuleShape3D_yf5fn")
+shape = SubResource("CapsuleShape3D_4flbx")
 
 [node name="Camera3D" type="Camera3D" parent="." unique_id=1420133942]
 unique_name_in_owner = true
+physics_interpolation_mode = 2
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.6, 0)
 fov = 103.0
 
@@ -28,5 +27,5 @@ fov = 103.0
 unique_name_in_owner = true
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.35, 0)
 enabled = false
-shape = SubResource("CapsuleShape3D_g4v7s")
+shape = SubResource("BoxShape3D_i3pqv")
 target_position = Vector3(0, 0, 0)

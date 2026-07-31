@@ -3,6 +3,7 @@
 [ext_resource type="Material" uid="uid://c1xrus2bfddee" path="res://materials/dev_grid.tres" id="1_aqk2v"]
 [ext_resource type="PackedScene" uid="uid://byf4sm50xitr6" path="res://player.tscn" id="1_f3sb7"]
 [ext_resource type="Script" uid="uid://c0gmjq3sxdofu" path="res://hud.gd" id="3_tlwt5"]
+[ext_resource type="Script" uid="uid://bjdtji4wv8y82" path="res://pause_menu.gd" id="4_aqk2v"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_gv5m4"]
 sky_horizon_color = Color(0.66224277, 0.6717428, 0.6867428, 1)
@@ -49,3 +50,64 @@ player = NodePath("../Player")
 [node name="Label" type="Label" parent="CanvasLayer" unique_id=165553907]
 offset_right = 40.0
 offset_bottom = 23.0
+
+[node name="PauseMenu" type="CanvasLayer" parent="." unique_id=1066285256 node_paths=PackedStringArray("player")]
+process_mode = 3
+script = ExtResource("4_aqk2v")
+player = NodePath("../Player")
+
+[node name="Panel" type="Panel" parent="PauseMenu" unique_id=1116956591]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="PauseMenu/Panel" unique_id=1471360942]
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 40.0
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 24
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 24
+
+[node name="VBoxContainer" type="VBoxContainer" parent="PauseMenu/Panel/MarginContainer" unique_id=1905086193]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="PauseMenu/Panel/MarginContainer/VBoxContainer" unique_id=205319012]
+layout_mode = 2
+text = "Paused"
+
+[node name="ResumeButton" type="Button" parent="PauseMenu/Panel/MarginContainer/VBoxContainer" unique_id=814932678]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Resume"
+
+[node name="RespawnButton" type="Button" parent="PauseMenu/Panel/MarginContainer/VBoxContainer" unique_id=1048537342]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Respawn"
+
+[node name="HSeparator" type="HSeparator" parent="PauseMenu/Panel/MarginContainer/VBoxContainer" unique_id=1390639727]
+layout_mode = 2
+
+[node name="SliderList" type="VBoxContainer" parent="PauseMenu/Panel/MarginContainer/VBoxContainer" unique_id=515886242]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="ToggleList" type="VBoxContainer" parent="PauseMenu/Panel/MarginContainer/VBoxContainer" unique_id=2007967114]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="HSeparator2" type="HSeparator" parent="PauseMenu/Panel/MarginContainer/VBoxContainer" unique_id=47946350]
+layout_mode = 2
+
+[node name="BindList" type="VBoxContainer" parent="PauseMenu/Panel/MarginContainer/VBoxContainer" unique_id=1592614192]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="QuitButton" type="Button" parent="PauseMenu/Panel/MarginContainer/VBoxContainer" unique_id=1332805894]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Quit"
