@@ -27,7 +27,6 @@ const JUMP_IMPULSE := 268.33 * U
 
 const SV_SPRINTSPEED := 320.0 * U
 const SV_WALKSPEED := 190.0 * U
-const SV_DUCKSPEED := 63.0 * U
 
 const STAND_HEIGHT := 83.0 * U
 const CROUCH_HEIGHT := 62.0 * U
@@ -50,7 +49,6 @@ const M_YAW := 0.022
 @export var auto_bhop: bool = true
 @export var auto_sprint: bool = true
 @export var crouch_toggle: bool = false
-@export var duck_latch: bool = true
 @export var slide_speed_cap_units: float = 0.0
 @export var slide_entry_speed_units: float = 200.0
 @export var slide_boost_units: float = 60.0
@@ -70,6 +68,7 @@ var crouch_prev := false
 var slide_pose := 0.0
 var crouch_eye_out := 0.0
 
+var duck_latch:= true
 var duck_target := 0.0
 var jump_time := 0.0
 var last_pending := 0.0
@@ -86,6 +85,10 @@ var curr_eye := Vector3.ZERO
 var pitch := 0.0
 
 func _ready() -> void:
+	floor_stop_on_slope = false
+	floor_block_on_wall = false
+	wall_min_slide_angle = 0.0
+	floor_max_angle = deg_to_rad(45.57)
 	camera.top_level = true
 	eye_height = STAND_EYE
 	curr_eye = global_position + Vector3(0.0, eye_height, 0.0)
@@ -373,6 +376,17 @@ func _current_max_speed() -> float:
 	return base / 3.0 if is_crouched else base
 
 
+func _clip_walls() -> void:
+	var floor_cos := cos(floor_max_angle)
+	for i in get_slide_collision_count():
+		var n := get_slide_collision(i).get_normal()
+		if n.y > floor_cos:
+			continue
+		var into := velocity.dot(n)
+		if into < 0.0:
+			velocity -= n * into
+
+
 func _process(_delta: float) -> void:
 	var f := Engine.get_physics_interpolation_fraction()
 	camera.global_position = prev_eye.lerp(curr_eye, f)
@@ -411,6 +425,7 @@ func _physics_process(delta: float) -> void:
 			_air_accelerate(wish_dir, max_speed, SV_AIRACCELERATE, delta)
 
 	move_and_slide()
+	_clip_walls()
 	velocity.y -= SV_GRAVITY * 0.5 * delta
 	prev_eye = curr_eye
 	curr_eye = global_position + Vector3(0.0, eye_height, 0.0)

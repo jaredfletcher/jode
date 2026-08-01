@@ -21,6 +21,7 @@ const TOGGLES := [
 const SLIDERS := [
 	{
 		"prop": "sensitivity",
+		"group": "controls",
 		"label": "Mouse Sensitivity",
 		"tip": "Same scale as Source games — enter the value from your TF2 config.",
 		"min": 0.5,
@@ -29,18 +30,21 @@ const SLIDERS := [
 	},
 	{
 		"prop": "slide_entry_speed_units",
+		"group": "gameplay",
 		"label": "Slide Entry Speed",
 		"tip": "Minimum speed needed to start a slide, in units per second.",
 		"min": 0.0, "max": 400.0, "step": 5.0,
 	},
 	{
 		"prop": "slide_boost_units",
+		"group": "gameplay",
 		"label": "Slide Boost",
 		"tip": "Speed added the moment a slide begins.",
 		"min": 0.0, "max": 200.0, "step": 5.0,
 	},
 	{
 		"prop": "slide_speed_cap_units",
+		"group": "gameplay",
 		"label": "Slide Speed Cap",
 		"tip": "Ceiling the boost can raise you to. Zero means uncapped.",
 		"min": 0.0, "max": 800.0, "step": 10.0,
@@ -62,7 +66,10 @@ const CONFIG_PATH := "user://input.cfg"
 
 @onready var bind_list: VBoxContainer = %BindList
 @onready var toggle_list: VBoxContainer = %ToggleList
-@onready var slider_list: VBoxContainer = %SliderList
+@onready var slider_lists := {
+	"controls": %SliderList,
+	"gameplay": %DebugSliderList,
+}
 
 var listening_action := ""
 var listening_button: Button = null
@@ -143,11 +150,11 @@ func _build_binds() -> void:
 		var row := HBoxContainer.new()
 		var label := Label.new()
 		label.text = b.label
-		label.custom_minimum_size.x = 180
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
 		var button := Button.new()
 		button.text = _bind_text(action)
-		button.custom_minimum_size.x = 180
+		button.custom_minimum_size.x = 200
 		button.pressed.connect(_start_listening.bind(action, button))
 		bind_buttons[action] = button
 
@@ -157,14 +164,17 @@ func _build_binds() -> void:
 
 
 func _build_sliders() -> void:
-	for child in slider_list.get_children():
-		child.queue_free()
+	for list in slider_lists.values():
+		for child in list.get_children():
+			child.queue_free()
 	if player == null:
 		return
 
 	for s in SLIDERS:
+		var target: VBoxContainer = slider_lists[s.group]
 		var prop: String = s.prop
 		var row := VBoxContainer.new()
+		row.add_theme_constant_override("separation", 2)
 		var header := HBoxContainer.new()
 
 		var name_label := Label.new()
@@ -199,7 +209,7 @@ func _build_sliders() -> void:
 		header.add_child(spin)
 		row.add_child(header)
 		row.add_child(slider)
-		slider_list.add_child(row)
+		target.add_child(row)
 
 
 func _refresh_labels() -> void:
@@ -295,5 +305,11 @@ func _load_config() -> void:
 			InputMap.action_erase_events(action)
 			InputMap.action_add_event(action, e)
 	if player != null and cfg.has_section("settings"):
+		var known := PackedStringArray()
+		for t in TOGGLES:
+			known.append(t.prop)
+		for s in SLIDERS:
+			known.append(s.prop)
 		for prop in cfg.get_section_keys("settings"):
-			player.set(prop, cfg.get_value("settings", prop))
+			if prop in known:
+				player.set(prop, cfg.get_value("settings", prop))

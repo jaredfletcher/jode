@@ -19,6 +19,13 @@ ambient_light_energy = 0.3
 tonemap_mode = 4
 glow_enabled = true
 
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_aqk2v"]
+bg_color = Color(0.3133042, 0.33361515, 0.3491902, 0.94000006)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
 [node name="World" type="Node3D" unique_id=2090805965]
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1787301274]
@@ -29,9 +36,9 @@ transform = Transform3D(0.8660254, -0.38302222, 0.32139382, 0, 0.64278764, 0.766
 shadow_enabled = true
 
 [node name="CSGBox3D" type="CSGBox3D" parent="." unique_id=1745936925]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 33.101868, 0, -58.03784)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 31.354706, 0, -58.03784)
 use_collision = true
-size = Vector3(86.203735, 1, 136.07568)
+size = Vector3(89.69806, 1, 136.07568)
 material = ExtResource("1_aqk2v")
 
 [node name="CSGBox3D2" type="CSGBox3D" parent="." unique_id=1524034465]
@@ -57,57 +64,137 @@ script = ExtResource("4_aqk2v")
 player = NodePath("../Player")
 
 [node name="Panel" type="Panel" parent="PauseMenu" unique_id=1116956591]
+custom_minimum_size = Vector2(760, 620)
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -380.0
+offset_top = -310.0
+offset_right = 380.0
+offset_bottom = 310.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_aqk2v")
+
+[node name="MarginContainer" type="MarginContainer" parent="PauseMenu/Panel" unique_id=1471360942]
+layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-
-[node name="MarginContainer" type="MarginContainer" parent="PauseMenu/Panel" unique_id=1471360942]
-layout_mode = 0
-offset_right = 40.0
-offset_bottom = 40.0
-theme_override_constants/margin_left = 24
-theme_override_constants/margin_top = 24
-theme_override_constants/margin_right = 24
-theme_override_constants/margin_bottom = 24
+theme_override_constants/margin_left = 32
+theme_override_constants/margin_top = 32
+theme_override_constants/margin_right = 32
+theme_override_constants/margin_bottom = 32
 
 [node name="VBoxContainer" type="VBoxContainer" parent="PauseMenu/Panel/MarginContainer" unique_id=1905086193]
 layout_mode = 2
+theme_override_constants/separation = 16
 
 [node name="Label" type="Label" parent="PauseMenu/Panel/MarginContainer/VBoxContainer" unique_id=205319012]
 layout_mode = 2
+theme_override_font_sizes/font_size = 28
 text = "Paused"
 
-[node name="ResumeButton" type="Button" parent="PauseMenu/Panel/MarginContainer/VBoxContainer" unique_id=814932678]
+[node name="TabContainer" type="TabContainer" parent="PauseMenu/Panel/MarginContainer/VBoxContainer" unique_id=1574801702]
+layout_mode = 2
+size_flags_vertical = 3
+current_tab = 0
+
+[node name="Controls" type="ScrollContainer" parent="PauseMenu/Panel/MarginContainer/VBoxContainer/TabContainer" unique_id=278999152]
 unique_name_in_owner = true
 layout_mode = 2
+metadata/_tab_index = 0
+
+[node name="MarginContainer" type="MarginContainer" parent="PauseMenu/Panel/MarginContainer/VBoxContainer/TabContainer/Controls" unique_id=1690168052]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 16
+
+[node name="VBoxContainer" type="VBoxContainer" parent="PauseMenu/Panel/MarginContainer/VBoxContainer/TabContainer/Controls/MarginContainer" unique_id=1465478114]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 20
+
+[node name="SliderList" type="VBoxContainer" parent="PauseMenu/Panel/MarginContainer/VBoxContainer/TabContainer/Controls/MarginContainer/VBoxContainer" unique_id=515886242]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="HSeparator" type="HSeparator" parent="PauseMenu/Panel/MarginContainer/VBoxContainer/TabContainer/Controls/MarginContainer/VBoxContainer" unique_id=1565018837]
+layout_mode = 2
+
+[node name="BindList" type="VBoxContainer" parent="PauseMenu/Panel/MarginContainer/VBoxContainer/TabContainer/Controls/MarginContainer/VBoxContainer" unique_id=1592614192]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Gameplay" type="ScrollContainer" parent="PauseMenu/Panel/MarginContainer/VBoxContainer/TabContainer" unique_id=1172099425]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+metadata/_tab_index = 1
+
+[node name="MarginContainer" type="MarginContainer" parent="PauseMenu/Panel/MarginContainer/VBoxContainer/TabContainer/Gameplay" unique_id=1099452143]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 16
+
+[node name="VBoxContainer" type="VBoxContainer" parent="PauseMenu/Panel/MarginContainer/VBoxContainer/TabContainer/Gameplay/MarginContainer" unique_id=575632051]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 20
+
+[node name="DebugSliderList" type="VBoxContainer" parent="PauseMenu/Panel/MarginContainer/VBoxContainer/TabContainer/Gameplay/MarginContainer/VBoxContainer" unique_id=1947065443]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="HSeparator" type="HSeparator" parent="PauseMenu/Panel/MarginContainer/VBoxContainer/TabContainer/Gameplay/MarginContainer/VBoxContainer" unique_id=472916777]
+layout_mode = 2
+
+[node name="ToggleList" type="VBoxContainer" parent="PauseMenu/Panel/MarginContainer/VBoxContainer/TabContainer/Gameplay/MarginContainer/VBoxContainer" unique_id=1296881463]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="HBoxContainer" type="HBoxContainer" parent="PauseMenu/Panel/MarginContainer/VBoxContainer" unique_id=162978869]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="ResumeButton" type="Button" parent="PauseMenu/Panel/MarginContainer/VBoxContainer/HBoxContainer" unique_id=814932678]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
 text = "Resume"
 
-[node name="RespawnButton" type="Button" parent="PauseMenu/Panel/MarginContainer/VBoxContainer" unique_id=1048537342]
+[node name="RespawnButton" type="Button" parent="PauseMenu/Panel/MarginContainer/VBoxContainer/HBoxContainer" unique_id=1048537342]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_horizontal = 3
 text = "Respawn"
 
-[node name="HSeparator" type="HSeparator" parent="PauseMenu/Panel/MarginContainer/VBoxContainer" unique_id=1390639727]
-layout_mode = 2
-
-[node name="SliderList" type="VBoxContainer" parent="PauseMenu/Panel/MarginContainer/VBoxContainer" unique_id=515886242]
+[node name="QuitButton" type="Button" parent="PauseMenu/Panel/MarginContainer/VBoxContainer/HBoxContainer" unique_id=1332805894]
 unique_name_in_owner = true
 layout_mode = 2
-
-[node name="ToggleList" type="VBoxContainer" parent="PauseMenu/Panel/MarginContainer/VBoxContainer" unique_id=2007967114]
-unique_name_in_owner = true
-layout_mode = 2
-
-[node name="HSeparator2" type="HSeparator" parent="PauseMenu/Panel/MarginContainer/VBoxContainer" unique_id=47946350]
-layout_mode = 2
-
-[node name="BindList" type="VBoxContainer" parent="PauseMenu/Panel/MarginContainer/VBoxContainer" unique_id=1592614192]
-unique_name_in_owner = true
-layout_mode = 2
-
-[node name="QuitButton" type="Button" parent="PauseMenu/Panel/MarginContainer/VBoxContainer" unique_id=1332805894]
-unique_name_in_owner = true
-layout_mode = 2
+size_flags_horizontal = 3
 text = "Quit"
+
+[node name="CSGBox3D3" type="CSGBox3D" parent="." unique_id=1882528323]
+transform = Transform3D(0.45794952, 0.8889781, 0.00053767953, -0.8889037, 0.45791873, -0.01268073, -0.011519105, 0.0053291926, 0.9999195, -17.416258, 7.581603, -59.93104)
+use_collision = true
+size = Vector3(13.808884, 9.522949, 131.87573)
+material = ExtResource("1_aqk2v")
+
+[node name="CSGBox3D4" type="CSGBox3D" parent="." unique_id=1036159132]
+transform = Transform3D(0.92746514, 0.37380865, 0.0086921705, -0.37373215, 0.92749053, -0.009248576, -0.011519103, 0.0053291926, 0.9999195, 2.199685, 7.1569066, 7.137887)
+use_collision = true
+size = Vector3(40.97651, 1, 6.029785)
+material = ExtResource("1_aqk2v")
