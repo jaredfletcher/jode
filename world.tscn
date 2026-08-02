@@ -36,15 +36,15 @@ transform = Transform3D(0.8660254, -0.38302222, 0.32139382, 0, 0.64278764, 0.766
 shadow_enabled = true
 
 [node name="CSGBox3D" type="CSGBox3D" parent="." unique_id=1745936925]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 31.354706, 0, -58.03784)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.994155, 0, -36.00536)
 use_collision = true
-size = Vector3(89.69806, 1, 136.07568)
+size = Vector3(300, 1, 300)
 material = ExtResource("1_aqk2v")
 
 [node name="CSGBox3D2" type="CSGBox3D" parent="." unique_id=1524034465]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 43.323036, 0.50893414, -59.951683)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 43, 1, -60)
 use_collision = true
-size = Vector3(86.203735, 1, 131.87573)
+size = Vector3(86, 1, 132)
 material = ExtResource("1_aqk2v")
 
 [node name="Player" parent="." unique_id=1276889450 instance=ExtResource("1_f3sb7")]
@@ -54,9 +54,24 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2, 0)
 script = ExtResource("3_tlwt5")
 player = NodePath("../Player")
 
-[node name="Label" type="Label" parent="CanvasLayer" unique_id=165553907]
-offset_right = 40.0
-offset_bottom = 23.0
+[node name="VBoxContainer" type="VBoxContainer" parent="CanvasLayer" unique_id=502615538]
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 9.0
+offset_bottom = 79.0
+theme_override_constants/separation = 1
+
+[node name="FPSLabel" type="Label" parent="CanvasLayer/VBoxContainer" unique_id=388504009]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="SpeedLabel" type="Label" parent="CanvasLayer/VBoxContainer" unique_id=165553907]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="StateLabel" type="Label" parent="CanvasLayer/VBoxContainer" unique_id=2013020137]
+unique_name_in_owner = true
+layout_mode = 2
 
 [node name="PauseMenu" type="CanvasLayer" parent="." unique_id=1066285256 node_paths=PackedStringArray("player")]
 process_mode = 3
@@ -100,6 +115,7 @@ theme_override_font_sizes/font_size = 28
 text = "Paused"
 
 [node name="TabContainer" type="TabContainer" parent="PauseMenu/Panel/MarginContainer/VBoxContainer" unique_id=1574801702]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 current_tab = 0
@@ -111,6 +127,8 @@ metadata/_tab_index = 0
 
 [node name="MarginContainer" type="MarginContainer" parent="PauseMenu/Panel/MarginContainer/VBoxContainer/TabContainer/Controls" unique_id=1690168052]
 layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
 theme_override_constants/margin_left = 16
 theme_override_constants/margin_top = 16
 theme_override_constants/margin_right = 16
@@ -142,6 +160,8 @@ metadata/_tab_index = 1
 
 [node name="MarginContainer" type="MarginContainer" parent="PauseMenu/Panel/MarginContainer/VBoxContainer/TabContainer/Gameplay" unique_id=1099452143]
 layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
 theme_override_constants/margin_left = 16
 theme_override_constants/margin_top = 16
 theme_override_constants/margin_right = 16
@@ -187,14 +207,26 @@ layout_mode = 2
 size_flags_horizontal = 3
 text = "Quit"
 
-[node name="CSGBox3D3" type="CSGBox3D" parent="." unique_id=1882528323]
-transform = Transform3D(0.45794952, 0.8889781, 0.00053767953, -0.8889037, 0.45791873, -0.01268073, -0.011519105, 0.0053291926, 0.9999195, -17.416258, 7.581603, -59.93104)
-use_collision = true
-size = Vector3(13.808884, 9.522949, 131.87573)
-material = ExtResource("1_aqk2v")
+[node name="ResetButton" type="Button" parent="PauseMenu/Panel/MarginContainer/VBoxContainer/HBoxContainer" unique_id=1425327856]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Reset"
 
 [node name="CSGBox3D4" type="CSGBox3D" parent="." unique_id=1036159132]
-transform = Transform3D(0.92746514, 0.37380865, 0.0086921705, -0.37373215, 0.92749053, -0.009248576, -0.011519103, 0.0053291926, 0.9999195, 2.199685, 7.1569066, 7.137887)
+transform = Transform3D(0.92718387, 0.37460655, 0, -0.37460658, 0.9271838, 0, 0, 0, 0.99999994, 0, 7, 7)
 use_collision = true
-size = Vector3(40.97651, 1, 6.029785)
+size = Vector3(47, 1, 6)
+material = ExtResource("1_aqk2v")
+
+[node name="CSGBox3D5" type="CSGBox3D" parent="." unique_id=1146025813]
+transform = Transform3D(-0.5299192, -0.848048, 8.742277e-08, -0.84804803, 0.5299192, 0, -4.632701e-08, -7.413871e-08, -0.9999999, -25.60943, 7.1979675, -60)
+use_collision = true
+size = Vector3(18, 2, 128)
+material = ExtResource("1_aqk2v")
+
+[node name="CSGBox3D6" type="CSGBox3D" parent="." unique_id=1827626372]
+transform = Transform3D(0.5299192, 0.848048, 0, -0.84804803, 0.5299192, -3.5527133e-15, -1.0658141e-14, 7.1054274e-15, 0.9999999, -17.029451, 9.647467, -60)
+use_collision = true
+size = Vector3(12, 2, 128)
 material = ExtResource("1_aqk2v")

@@ -3,7 +3,22 @@ extends CharacterBody3D
 
 const U := 0.0254
 
-enum Move { GROUND, AIR, SLIDE }
+enum Move { GROUND, AIR, SLIDE, SURF }
+
+const IN_JUMP := 1
+const IN_CROUCH := 2
+const IN_SPRINT := 4
+const IN_NOCLIP := 8
+
+class Cmd:
+	var wish := Vector2.ZERO
+	var buttons := 0
+	var yaw := 0.0
+	var pitch := 0.0
+	var tick := 0
+
+	func pressed(bit: int) -> bool:
+		return buttons & bit != 0
 
 const SLIDE_BUFFER := 0.15
 const SLIDE_GRACE := 0.45
@@ -12,17 +27,19 @@ const SLIDE_EXIT_SPEED := 120.0 * U
 const SLIDE_FRICTION := 0.6
 const SLIDE_TIME := 1.4
 const SLIDE_COOLDOWN := 0.35
-const SLIDE_STEER := 1.2
 const SLIDE_HEIGHT := 40.0 * U
 const SLIDE_EYE := 32.0 * U
 const SLIDE_POSE_RATE := 8.0
+
+const SURF_MIN_SPEED := 150.0 * U
+const SURF_RATE_SPEED := 320.0 * U
+const SURF_ACCELERATE := 100.0
 
 const SV_GRAVITY := 800.0 * U
 const SV_STOPSPEED := 100.0 * U
 const SV_FRICTION := 4.0
 const SV_ACCELERATE := 10.0
 const SV_AIRACCELERATE := 10.0
-const SV_AIRSPEEDCAP := 30.0 * U
 const JUMP_IMPULSE := 268.33 * U
 
 const SV_SPRINTSPEED := 320.0 * U
@@ -45,18 +62,34 @@ const JUMP_WINDOW := 0.51
 
 const M_YAW := 0.022
 
-@export var sensitivity: float = 6.0
+const NOCLIP_SPEED := 500.0 * U
+const NOCLIP_FAST := 3.0
+
+@export var noclip_toggle: bool = false
+@export var sensitivity: float = 3.0
 @export var auto_bhop: bool = true
 @export var auto_sprint: bool = true
 @export var crouch_toggle: bool = false
+@export var slide_steer_cap_units: float = 100.0
 @export var slide_speed_cap_units: float = 0.0
 @export var slide_entry_speed_units: float = 200.0
 @export var slide_boost_units: float = 60.0
+@export var slide_steer: float = 1.2
+@export var air_speed_cap_units: float = 100.0
+@export var surf_speed_cap_units: float = 100.0
 
 @onready var camera: Camera3D = %Camera3D
 @onready var collider: CollisionShape3D = %CollisionShape3D
-@onready var capsule: CapsuleShape3D = collider.shape
+@onready var capsule: CylinderShape3D = collider.shape
 @onready var stand_check: ShapeCast3D = %StandCheck
+
+var mouse_delta := Vector2.ZERO
+var cmd := Cmd.new()
+var prev_buttons := 0
+var view_yaw := 0.0
+var view_pitch := 0.0
+
+var noclip := false
 
 var spawn_point := Vector3.ZERO
 
@@ -82,11 +115,8 @@ var crouch_shifted := false
 var eye_height := 0.0
 var prev_eye := Vector3.ZERO
 var curr_eye := Vector3.ZERO
-var pitch := 0.0
 
 func _ready() -> void:
-	floor_stop_on_slope = false
-	floor_block_on_wall = false
 	wall_min_slide_angle = 0.0
 	floor_max_angle = deg_to_rad(45.57)
 	camera.top_level = true
@@ -101,17 +131,42 @@ func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
+func _sample_input() -> void:
+	prev_buttons = cmd.buttons
+	cmd.wish = Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+	cmd.buttons = 0
+	if Input.is_action_pressed("jump"):
+		cmd.buttons |= IN_JUMP
+	if Input.is_action_pressed("crouch"):
+		cmd.buttons |= IN_CROUCH
+	if Input.is_action_pressed("sprint"):
+		cmd.buttons |= IN_SPRINT
+	if Input.is_action_pressed("noclip"):
+		cmd.buttons |= IN_NOCLIP
+	
+	cmd.yaw = view_yaw
+	cmd.pitch = view_pitch
+	rotation.y = view_yaw
+	cmd.tick += 1
+
+
+func _just_pressed(bit: int) -> bool:
+	return (cmd.buttons & bit) != 0 and (prev_buttons & bit) == 0
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		var amount := M_YAW * sensitivity
-		rotation.y -= deg_to_rad(event.relative.x * amount)
-		pitch = clampf(pitch - deg_to_rad(event.relative.y * amount), deg_to_rad(-89.0), deg_to_rad(89.0))
+		mouse_delta += event.relative
 
 
 func respawn() -> void:
+	mouse_delta = Vector2.ZERO
+	cmd.yaw = 0.0
+	cmd.pitch = 0.0
+	view_yaw = 0.0
+	view_pitch = 0.0
 	velocity = Vector3.ZERO
 	rotation.y = 0.0
-	pitch = 0.0
 	move_state = Move.AIR
 	duck_progress = 0.0
 	duck_target = 0.0
@@ -128,6 +183,32 @@ func respawn() -> void:
 	eye_height = STAND_EYE
 	curr_eye = global_position + Vector3(0.0, eye_height, 0.0)
 	prev_eye = curr_eye
+
+
+func _set_noclip(on: bool) -> void:
+	if on == noclip:
+		return
+	noclip = on
+	collider.disabled = on
+	if on:
+		velocity = Vector3.ZERO
+	else:
+		move_state = Move.AIR
+
+
+func _move_noclip(delta: float) -> void:
+	var dir := camera.global_basis * Vector3(cmd.wish.x, 0.0, cmd.wish.y)
+	if cmd.pressed(IN_JUMP):
+		dir.y += 1.0
+	if cmd.pressed(IN_CROUCH):
+		dir.y -= 1.0
+
+	var speed := NOCLIP_SPEED
+	if cmd.pressed(IN_SPRINT):
+		speed *= NOCLIP_FAST
+
+	velocity = dir.normalized() * speed if dir.length_squared() > 0.0 else Vector3.ZERO
+	global_position += velocity * delta
 
 
 func _apply_friction(delta: float) -> void:
@@ -152,9 +233,9 @@ func _accelerate(wish_dir: Vector3, wish_speed: float, accel: float, delta: floa
 	velocity += wish_dir * accel_speed
 
 
-func _air_accelerate(wish_dir: Vector3, wish_speed: float, accel: float, delta: float) -> void:
-	var capped_speed := minf(wish_speed, SV_AIRSPEEDCAP)
-
+func _air_accelerate(wish_dir: Vector3, wish_speed: float, speed_cap: float, accel: float, delta: float) -> void:
+	var capped_speed := minf(wish_speed, speed_cap)
+	
 	var current_speed := velocity.dot(wish_dir)
 	var add_speed := capped_speed - current_speed
 	if add_speed <= 0.0:
@@ -169,13 +250,26 @@ func _set_check(height: float, center_y: float) -> void:
 	stand_check.position.y = center_y
 
 
+func _hull_height() -> float:
+	var base_h := CROUCH_HEIGHT if is_crouched else STAND_HEIGHT
+	return lerpf(base_h, SLIDE_HEIGHT, slide_pose)
+
+
+func _fits(height: float) -> bool:
+	var top := _hull_height()
+	if height <= top:
+		return true
+	_set_check(height - top, (height + top) * 0.5)
+	stand_check.force_shapecast_update()
+	return not stand_check.is_colliding()
+
+
 func _can_stand() -> bool:
 	if crouch_shifted:
 		_set_check(STAND_HEIGHT, STAND_HEIGHT * 0.5 - HULL_SHIFT)
-	else:
-		_set_check(HULL_DELTA, (STAND_HEIGHT + CROUCH_HEIGHT) * 0.5)
-	stand_check.force_shapecast_update()
-	return not stand_check.is_colliding()
+		stand_check.force_shapecast_update()
+		return not stand_check.is_colliding()
+	return _fits(STAND_HEIGHT)
 
 
 func _finish_duck() -> void:
@@ -210,17 +304,17 @@ func _spline(t: float) -> float:
 
 func _update_crouch(delta: float) -> void:
 	if crouch_toggle:
-		if Input.is_action_just_pressed("crouch"):
+		if _just_pressed(IN_CROUCH):
 			crouch_wanted = not crouch_wanted
 	else:
-		crouch_wanted = Input.is_action_pressed("crouch")
+		crouch_wanted = cmd.pressed(IN_CROUCH)
 
 	var edge := crouch_wanted and not crouch_prev
 	crouch_prev = crouch_wanted
 	if edge:
 		slide_buffer = SLIDE_BUFFER
 
-	if crouch_wanted and not is_crouched and jump_time > 0.0 and not is_on_floor():
+	if crouch_wanted and not is_crouched and jump_time > 0.0 and not is_on_floor() and move_state != Move.SURF:
 		var eye_before := eye_height
 		duck_progress = 1.0
 		_finish_duck()
@@ -281,9 +375,7 @@ func _update_pose(delta: float) -> void:
 
 
 func _headroom_clear() -> bool:
-	_set_check(CROUCH_HEIGHT - SLIDE_HEIGHT, (CROUCH_HEIGHT + SLIDE_HEIGHT) * 0.5)
-	stand_check.force_shapecast_update()
-	return not stand_check.is_colliding()
+	return _fits(CROUCH_HEIGHT)
 
 
 func _update_state(delta: float) -> void:
@@ -312,12 +404,23 @@ func _update_state(delta: float) -> void:
 					_enter_slide()
 				else:
 					move_state = Move.GROUND
+			elif _on_surf_ramp():
+				move_state = Move.SURF
+		Move.SURF:
+			if grounded:
+				if _can_slide(flat_speed, true):
+					_enter_slide()
+				else:
+					move_state = Move.GROUND
+			elif not _on_surf_ramp():
+				move_state = Move.AIR
 
 
 func _enter_slide() -> void:
 	move_state = Move.SLIDE
 	slide_time = SLIDE_TIME
 	slide_buffer = 0.0
+	velocity.y = minf(velocity.y, 0.0)
 
 	if not is_crouched:
 		view_offset += crouch_eye_out - CROUCH_EYE
@@ -340,7 +443,7 @@ func _exit_slide() -> void:
 	slide_cooldown = SLIDE_COOLDOWN
 
 
-func _move_slide(delta: float) -> void:
+func _move_slide(wish_dir: Vector3, delta: float) -> void:
 	velocity.y = 0.0
 
 	if SLIDE_TIME - slide_time > SLIDE_GRACE:
@@ -350,25 +453,19 @@ func _move_slide(delta: float) -> void:
 			var drop := control * SLIDE_FRICTION * delta
 			velocity *= maxf(speed - drop, 0.0) / speed
 
-	var flat := Vector3(velocity.x, 0.0, velocity.z)
-	var spd := flat.length()
-	var look := -global_basis.z
-	look.y = 0.0
-
-	if spd > 0.01 and look.length_squared() > 0.0:
-		look = look.normalized()
-		var dir := flat / spd
-		var align := dir.dot(look)
-		if align > 0.0:
-			var steered := (dir + look * SLIDE_STEER * align * delta).normalized()
-			velocity.x = steered.x * spd
-			velocity.z = steered.z * spd
+	var spd := Vector2(velocity.x, velocity.z).length()
+	if spd > 0.01 and wish_dir.length_squared() > 0.0:
+		_air_accelerate(wish_dir, SV_SPRINTSPEED, slide_steer_cap_units * U, SV_AIRACCELERATE, delta)
+		var after := Vector2(velocity.x, velocity.z).length()
+		if after > 0.01:
+			velocity.x *= spd / after
+			velocity.z *= spd / after
 
 
 func _is_sprinting() -> bool:
 	if is_crouched:
 		return false
-	return true if auto_sprint else Input.is_action_pressed("sprint")
+	return true if auto_sprint else cmd.pressed(IN_SPRINT)
 
 
 func _current_max_speed() -> float:
@@ -380,20 +477,49 @@ func _clip_walls() -> void:
 	var floor_cos := cos(floor_max_angle)
 	for i in get_slide_collision_count():
 		var n := get_slide_collision(i).get_normal()
-		if n.y > floor_cos:
+		if n.y > floor_cos or n.y < -0.1:
 			continue
 		var into := velocity.dot(n)
 		if into < 0.0:
 			velocity -= n * into
 
 
+func _on_surf_ramp() -> bool:
+	var floor_cos := cos(floor_max_angle)
+	for i in get_slide_collision_count():
+		var n := get_slide_collision(i).get_normal()
+		if n.y > 0.01 and n.y < floor_cos:
+			return true
+	return false
+
+
 func _process(_delta: float) -> void:
+	var amount := M_YAW * sensitivity
+	view_yaw = wrapf(view_yaw - deg_to_rad(mouse_delta.x * amount), -PI, PI)
+	view_pitch = clampf(view_pitch - deg_to_rad(mouse_delta.y * amount), deg_to_rad(-89.0), deg_to_rad(89.0))
+	mouse_delta = Vector2.ZERO
+
 	var f := Engine.get_physics_interpolation_fraction()
 	camera.global_position = prev_eye.lerp(curr_eye, f)
-	camera.global_rotation = Vector3(pitch, rotation.y, 0.0)
+	camera.global_rotation = Vector3(view_pitch, view_yaw, 0.0)
 
 
 func _physics_process(delta: float) -> void:
+	_sample_input()
+
+	var np := cmd.pressed(IN_NOCLIP)
+	if noclip_toggle:
+		if _just_pressed(IN_NOCLIP):
+			_set_noclip(not noclip)
+	else:
+		_set_noclip(np)
+
+	if noclip:
+		_move_noclip(delta)
+		prev_eye = curr_eye
+		curr_eye = global_position + Vector3(0.0, eye_height, 0.0)
+		return
+
 	velocity.y -= SV_GRAVITY * 0.5 * delta
 	jump_time = maxf(jump_time - delta, 0.0)
 	if is_on_floor():
@@ -403,11 +529,10 @@ func _physics_process(delta: float) -> void:
 	_update_pose(delta)
 
 	var max_speed := _current_max_speed()
-	var input_dir := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
-	var wish_dir := (transform.basis * Vector3(input_dir.x, 0.0, input_dir.y)).normalized()
-	var jump_held := Input.is_action_pressed("jump") if auto_bhop else Input.is_action_just_pressed("jump")
+	var wish_dir := (transform.basis * Vector3(cmd.wish.x, 0.0, cmd.wish.y)).normalized()
+	var jump_held := cmd.pressed(IN_JUMP) if auto_bhop else _just_pressed(IN_JUMP)
 
-	if move_state != Move.AIR and jump_held:
+	if (move_state == Move.GROUND or move_state == Move.SLIDE) and jump_held:
 		jump_time = JUMP_WINDOW
 		velocity.y = JUMP_IMPULSE
 		if move_state == Move.SLIDE:
@@ -420,12 +545,19 @@ func _physics_process(delta: float) -> void:
 			_apply_friction(delta)
 			_accelerate(wish_dir, max_speed, SV_ACCELERATE, delta)
 		Move.SLIDE:
-			_move_slide(delta)
+			_move_slide(wish_dir, delta)
 		Move.AIR:
-			_air_accelerate(wish_dir, max_speed, SV_AIRACCELERATE, delta)
+			_air_accelerate(wish_dir, max_speed, air_speed_cap_units * U, SV_AIRACCELERATE, delta)
+		Move.SURF:
+			var flat := Vector2(velocity.x, velocity.z).length()
+			if flat >= SURF_MIN_SPEED:
+				var t := clampf((flat - SURF_MIN_SPEED) / (SURF_MIN_SPEED * 2.0), 0.0, 1.0)
+				_air_accelerate(wish_dir, SURF_RATE_SPEED, surf_speed_cap_units * U * t, SURF_ACCELERATE, delta)
 
+	floor_block_on_wall = (move_state == Move.GROUND or move_state == Move.SLIDE)
 	move_and_slide()
 	_clip_walls()
+
 	velocity.y -= SV_GRAVITY * 0.5 * delta
 	prev_eye = curr_eye
 	curr_eye = global_position + Vector3(0.0, eye_height, 0.0)
