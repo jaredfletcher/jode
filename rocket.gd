@@ -34,6 +34,42 @@ var shooter: Player = null
 var direction := Vector3.FORWARD
 var age := 0.0
 
+## The mesh is decoupled from the body for the same reason the player's camera
+## is. The simulation steps 0.42 metres at a time, and drawing at those steps
+## reads as stuttering at any frame rate above the tick rate.
+@onready var visual: Node3D = $MeshInstance3D
+
+var prev_position := Vector3.ZERO
+var curr_position := Vector3.ZERO
+
+
+func _ready() -> void:
+	visual.top_level = true
+
+
+## Sets the whole spawn state in one call, after the rocket is in the tree.
+##
+## Kept as a method rather than assigned field by field, because the
+## interpolation samples have to be seeded from the real starting position. Set
+## them from _ready instead and they capture wherever the node happened to be
+## before the launcher moved it, which draws the first frame as a streak from
+## the origin.
+func launch(from: Vector3, dir: Vector3, aim: Basis, by: Player) -> void:
+	global_position = from
+	global_basis = aim
+	direction = dir
+	shooter = by
+
+	prev_position = from
+	curr_position = from
+	visual.global_position = from
+	visual.global_basis = aim
+
+
+func _process(_delta: float) -> void:
+	visual.global_position = prev_position.lerp(
+		curr_position, Engine.get_physics_interpolation_fraction())
+
 
 func _physics_process(delta: float) -> void:
 	age += delta
@@ -48,12 +84,13 @@ func _physics_process(delta: float) -> void:
 		query.exclude = [shooter.get_rid()]
 
 	var hit := space.intersect_ray(query)
-	if hit.is_empty():
-		global_position += step
-		return
+	global_position = hit.position if not hit.is_empty() else global_position + step
 
-	global_position = hit.position
-	_explode()
+	prev_position = curr_position
+	curr_position = global_position
+
+	if not hit.is_empty():
+		_explode()
 
 
 ## Impulses everything in the blastable group. Splitting this from the player

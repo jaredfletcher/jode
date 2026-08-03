@@ -137,6 +137,13 @@ const NOCLIP_SPEED := 500.0 * U
 const NOCLIP_FAST := 3.0
 
 
+# --------------------------------------------------------------- ground ---
+
+## Source's NON_JUMP_VELOCITY. Rising faster than this and you are airborne by
+## definition, with no ground trace consulted at all.
+const NON_JUMP_SPEED := 140.0 * U
+
+
 # -------------------------------------------------------------- options ---
 
 @export_group("Options")
@@ -304,6 +311,15 @@ var slide_pose := 0.0  ## 0 crouch height, 1 slide height.
 
 
 func _ready() -> void:
+	# Authority is derived from the node name, which the spawner sets to the id
+	# of the owning peer. Node names replicate and authority assignments do
+	# not, so every copy of this player works out the same owner without being
+	# told. A name that is not a peer id, such as a Player dropped into a scene
+	# by hand, leaves the default authority alone.
+	var owner_id := name.to_int()
+	if owner_id > 0:
+		set_multiplayer_authority(owner_id)
+
 	# Surfing is almost entirely near-parallel motion against a steep face,
 	# which the default 15 degree threshold would stop instead of sliding.
 	wall_min_slide_angle = 0.0
@@ -316,6 +332,9 @@ func _ready() -> void:
 	eye_height = STAND_EYE
 	curr_eye = global_position + Vector3(0.0, eye_height, 0.0)
 	prev_eye = curr_eye
+
+	# Wherever the spawner put us. This is only correct because the position is
+	# assigned before add_child, and add_child is what runs _ready.
 	spawn_point = global_position
 
 	clearance.add_exception(self)
@@ -324,14 +343,72 @@ func _ready() -> void:
 	box.size = Vector3(w, 1.0, w)
 
 	add_to_group("blastable")
+
+	if is_local_player():
+		_setup_local()
+	else:
+		_setup_remote()
+
+
+## Whether this instance belongs to the peer running it.
+##
+## Asked explicitly rather than calling [method Node.is_multiplayer_authority]
+## everywhere, because that compares against the peer's unique id and there is
+## no peer at all in single player. Offline the only player in the scene is
+## ours, so the answer is yes.
+func is_local_player() -> bool:
+	if not is_inside_tree():
+		return false
+	if not multiplayer.has_multiplayer_peer():
+		return true
+	return is_multiplayer_authority()
+
+
+## Setup only the owning peer runs. Everything here has a process-wide effect,
+## so a second instance running it would fight the first.
+func _setup_local() -> void:
+	camera.current = true
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	_apply_vsync()
 	_apply_fps_cap()
 
 
+## Someone else's player. It keeps its collider so projectiles can still hit
+## it, but simulates nothing: its transform will arrive over the network.
+##
+## The camera is cleared rather than left alone because a camera entering a
+## viewport that has no current camera takes it, which happens whenever a
+## remote player spawns before the local one.
+func _setup_remote() -> void:
+	camera.current = false
+	set_process(false)
+	set_physics_process(false)
+	set_process_unhandled_input(false)
+
+
+## Whether the player counts as standing on ground this tick.
+##
+## [method CharacterBody3D.is_on_floor] reports the result of the last
+## [method CharacterBody3D.move_and_slide], so anything that changes velocity
+## after the move is invisible to it for a full tick. An explosion is exactly
+## that: the rocket resolves after the player has already moved, so the impulse
+## lands while the floor contact still reads as true, and the next tick's
+## GROUND branch zeroes the vertical component before it is ever used.
+##
+## Source has the same ordering problem and solves it in CategorizePosition by
+## skipping the ground trace whenever vertical velocity is above
+## NON_JUMP_VELOCITY. Every place that asks about ground contact goes through
+## here, so the duck transition and the origin shift agree with the state
+## machine about which one is happening.
+func _grounded() -> bool:
+	return is_on_floor() and velocity.y <= NON_JUMP_SPEED
+
+
 ## Restores the player to the spawn point and clears every piece of transient
 ## state. Anything that persists across a respawn is a bug.
 func respawn() -> void:
+	_set_noclip(false)
+
 	mouse_delta = Vector2.ZERO
 	view_yaw = 0.0
 	view_pitch = 0.0
@@ -411,7 +488,7 @@ func _physics_process(delta: float) -> void:
 	velocity.y -= sv_gravity_units * U * 0.5 * delta
 
 	jump_time = maxf(jump_time - delta, 0.0)
-	if is_on_floor():
+	if _grounded():
 		crouch_shifted = false
 
 	var flat_speed := Vector2(velocity.x, velocity.z).length()
@@ -457,7 +534,7 @@ func _physics_process(delta: float) -> void:
 	curr_eye = global_position + Vector3(0.0, eye_height, 0.0)
 
 	if weapon != null and weapon.has_method("update"):
-		weapon.update(delta, _aim_basis(), curr_eye, cmd.pressed(IN_ATTACK))
+		weapon.update(delta, self, _aim_basis(), curr_eye, cmd.pressed(IN_ATTACK))
 
 
 # ================================================================= input ===
@@ -599,7 +676,7 @@ func _finish_duck() -> void:
 	is_crouched = true
 	hull.height = CROUCH_HEIGHT
 	collider.position.y = CROUCH_HEIGHT * 0.5
-	if not is_on_floor():
+	if not _grounded():
 		global_position.y += HULL_SHIFT
 		crouch_shifted = true
 
@@ -621,7 +698,7 @@ func _finish_unduck() -> void:
 ## continuous across the jump.
 func _pending_for(target: float) -> float:
 	if target >= 1.0 and not is_crouched:
-		return 0.0 if is_on_floor() else HULL_SHIFT
+		return 0.0 if _grounded() else HULL_SHIFT
 	if target <= 0.0 and is_crouched:
 		return -HULL_SHIFT if crouch_shifted else 0.0
 	return 0.0
@@ -653,7 +730,7 @@ func _update_crouch(delta: float) -> void:
 	# Source defers the hull change until the transition completes, then
 	# branches on ground contact. Crouching within the jump window therefore
 	# ducks instantly and gets the airborne shift.
-	if crouch_wanted and not is_crouched and jump_time > 0.0 and not is_on_floor():
+	if crouch_wanted and not is_crouched and jump_time > 0.0 and not _grounded():
 		var eye_before := eye_height
 		duck_progress = 1.0
 		_finish_duck()
@@ -800,7 +877,7 @@ func _move_surf(wish_dir: Vector3, delta: float) -> void:
 func _update_state(delta: float, flat_speed: float) -> void:
 	slide_buffer = maxf(slide_buffer - delta, 0.0)
 	slide_cooldown = maxf(slide_cooldown - delta, 0.0)
-	var grounded := is_on_floor()
+	var grounded := _grounded()
 
 	match move_state:
 		Move.GROUND:
@@ -848,13 +925,30 @@ func _is_sprinting() -> bool:
 
 ## Applies the frame cap for the current context. Called from the property
 ## setters, so dragging a slider takes effect immediately.
+##
+## Guarded because the cap belongs to the process, not to a player. Without it
+## a remote instance carrying a scene-stored override would reset the local
+## player's cap on spawn.
+##
+## The play cap is dropped while vsync is on. Two limiters running at once beat
+## against each other and the result is uneven frame times, which matters more
+## here than in most games: the camera lerps on the physics interpolation
+## fraction every frame, so irregular frames turn straight into visible
+## stepping. With vsync on the refresh rate is already the cap.
 func _apply_fps_cap() -> void:
-	Engine.max_fps = int(maxf(fps_max_ui if menu_open else fps_max, 0.0))
+	if not is_local_player():
+		return
+	var cap := fps_max_ui if menu_open else (0.0 if vsync else fps_max)
+	Engine.max_fps = int(maxf(cap, 0.0))
 
 
 func _apply_vsync() -> void:
+	if not is_local_player():
+		return
 	DisplayServer.window_set_vsync_mode(
 		DisplayServer.VSYNC_ENABLED if vsync else DisplayServer.VSYNC_DISABLED)
+	# The play cap depends on the vsync state, so it has to follow it.
+	_apply_fps_cap()
 
 
 ## Called by the pause menu so the UI cap can take over while paused.
@@ -915,18 +1009,29 @@ func _set_noclip(on: bool) -> void:
 		return
 	noclip = on
 	collider.disabled = on
-	if on:
-		velocity = Vector3.ZERO
-	else:
-		# Re-entering the world airborne lets the normal ground check resolve
-		# where you actually are.
-		move_state = Move.AIR
+
+	# Zeroed in both directions. Leaving noclip used to keep whatever the fly
+	# code last wrote, which is 500 units per second, or 1500 while sprinting,
+	# so the collider came back and you were launched.
+	velocity = Vector3.ZERO
+
+	# Entering, so the state machine is not left reporting a slide it has
+	# stopped simulating. Leaving, so the normal ground check resolves where
+	# you actually are rather than trusting a contact from before the flight.
+	move_state = Move.AIR
+	slide_time = 0.0
+	slide_cooldown = 0.0
+	slide_buffer = 0.0
 
 
-## Flies along the camera basis rather than the body's, so you move where you
-## are looking including up and down.
+## Flies along the aim basis rather than the body's, so you move where you are
+## looking including up and down.
+##
+## The basis comes from the command angles, not from the camera. The camera is
+## written at render rate and leads the simulation, so reading it here would
+## make how far you fly per tick depend on frame rate.
 func _move_noclip(delta: float) -> void:
-	var dir := camera.global_basis * Vector3(cmd.wish.x, 0.0, cmd.wish.y)
+	var dir := _aim_basis() * Vector3(cmd.wish.x, 0.0, cmd.wish.y)
 	if cmd.pressed(IN_JUMP):
 		dir.y += 1.0
 	if cmd.pressed(IN_CROUCH):

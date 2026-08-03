@@ -1,7 +1,7 @@
 [gd_scene format=3 uid="uid://c0g3qi47qttrk"]
 
+[ext_resource type="Script" uid="uid://hykgqdfa2p1x" path="res://world.gd" id="1_036b0"]
 [ext_resource type="Material" uid="uid://c1xrus2bfddee" path="res://materials/dev_grid.tres" id="1_aqk2v"]
-[ext_resource type="PackedScene" uid="uid://byf4sm50xitr6" path="res://player.tscn" id="1_f3sb7"]
 [ext_resource type="Script" uid="uid://c0gmjq3sxdofu" path="res://hud.gd" id="3_tlwt5"]
 [ext_resource type="Script" uid="uid://bjdtji4wv8y82" path="res://pause_menu.gd" id="4_aqk2v"]
 
@@ -27,6 +27,7 @@ corner_radius_bottom_right = 4
 corner_radius_bottom_left = 4
 
 [node name="World" type="Node3D" unique_id=2090805965]
+script = ExtResource("1_036b0")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1787301274]
 environment = SubResource("Environment_fj7yv")
@@ -35,24 +36,12 @@ environment = SubResource("Environment_fj7yv")
 transform = Transform3D(0.8660254, -0.38302222, 0.32139382, 0, 0.64278764, 0.76604444, -0.5, -0.66341394, 0.5566704, 0, 0, 0)
 shadow_enabled = true
 
-[node name="CSGBox3D" type="CSGBox3D" parent="." unique_id=1745936925]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.994155, 0, -36.00536)
-use_collision = true
-size = Vector3(300, 1, 300)
-material = ExtResource("1_aqk2v")
+[node name="Players" type="Node3D" parent="." unique_id=2036742585]
+unique_name_in_owner = true
+transform = Transform3D(1, 0, 2.9802322e-08, 0, 1, 0, 0, 0, 1, 0, 2, 0)
 
-[node name="CSGBox3D2" type="CSGBox3D" parent="." unique_id=1524034465]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 43, 1, -60)
-use_collision = true
-size = Vector3(86, 1, 132)
-material = ExtResource("1_aqk2v")
-
-[node name="Player" parent="." unique_id=1276889450 instance=ExtResource("1_f3sb7")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2, 0)
-
-[node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=92120372 node_paths=PackedStringArray("player")]
+[node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=92120372]
 script = ExtResource("3_tlwt5")
-player = NodePath("../Player")
 
 [node name="VBoxContainer" type="VBoxContainer" parent="CanvasLayer" unique_id=502615538]
 offset_left = 8.0
@@ -73,10 +62,9 @@ layout_mode = 2
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="PauseMenu" type="CanvasLayer" parent="." unique_id=1066285256 node_paths=PackedStringArray("player")]
+[node name="PauseMenu" type="CanvasLayer" parent="." unique_id=1066285256]
 process_mode = 3
 script = ExtResource("4_aqk2v")
-player = NodePath("../Player")
 
 [node name="Panel" type="Panel" parent="PauseMenu" unique_id=1116956591]
 custom_minimum_size = Vector2(760, 620)
@@ -237,6 +225,18 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Reset"
+
+[node name="CSGBox3D" type="CSGBox3D" parent="." unique_id=1745936925]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.994155, 0, -36.00536)
+use_collision = true
+size = Vector3(300, 1, 300)
+material = ExtResource("1_aqk2v")
+
+[node name="CSGBox3D2" type="CSGBox3D" parent="." unique_id=1524034465]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 43, 1, -60)
+use_collision = true
+size = Vector3(86, 1, 132)
+material = ExtResource("1_aqk2v")
 
 [node name="CSGBox3D4" type="CSGBox3D" parent="." unique_id=1036159132]
 transform = Transform3D(0.92718387, 0.37460655, 0, -0.37460658, 0.9271838, 0, 0, 0, 0.99999994, 0, 7, 7)

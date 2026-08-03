@@ -1,3 +1,4 @@
+class_name PauseMenu
 extends CanvasLayer
 
 ## Pause menu, settings, and key rebinding.
@@ -226,7 +227,9 @@ const BIND_MOUSE := 1
 
 # ---------------------------------------------------------------- nodes ---
 
-@export var player: Player
+## Assigned through [method setup] rather than exported. The player is spawned
+## at runtime now, so there is no NodePath in the world scene to bake.
+var player: Player = null
 
 @onready var tabs: TabContainer = %TabContainer
 @onready var bind_list: VBoxContainer = %BindList
@@ -263,13 +266,6 @@ var confirm: ConfirmationDialog
 
 
 func _ready() -> void:
-	# Order matters: defaults must be captured before the config overwrites
-	# them, and the controls must be built after it, so they show the values
-	# actually in effect.
-	_capture_defaults()
-	_load_config()
-	_rebuild()
-
 	visible = false
 
 	confirm = ConfirmationDialog.new()
@@ -285,6 +281,20 @@ func _ready() -> void:
 
 	tabs.tab_changed.connect(func(_i: int) -> void: _update_reset_label())
 	_update_reset_label()
+
+
+## Called by the world once the local player exists. Everything that reads or
+## writes player properties lives here rather than in _ready, because at scene
+## load there is no player to read.
+##
+## Order still matters: defaults must be captured before the config overwrites
+## them, and the controls must be built after it, so they show the values
+## actually in effect.
+func setup(p: Player) -> void:
+	player = p
+	_capture_defaults()
+	_load_config()
+	_rebuild()
 
 
 ## Uses _input rather than _unhandled_input so a keypress during rebinding is
