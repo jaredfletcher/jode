@@ -1,0 +1,12 @@
+[gd_scene format=3 uid="uid://cbdoxxd6tbeqo"]
+
+[ext_resource type="Script" uid="uid://b5aivs7oe3dwv" path="res://rocket.gd" id="1_fj03e"]
+
+[sub_resource type="SphereMesh" id="SphereMesh_ww0uh"]
+
+[node name="rocket" type="Node3D" unique_id=1013882578]
+script = ExtResource("1_fj03e")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=1194798487]
+transform = Transform3D(0.25, 0, 0, 0, 0.25, 0, 0, 0, 0.25, 0, 0, 0)
+mesh = SubResource("SphereMesh_ww0uh")

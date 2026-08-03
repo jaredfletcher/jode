@@ -1,6 +1,7 @@
 [gd_scene format=3 uid="uid://byf4sm50xitr6"]
 
 [ext_resource type="Script" uid="uid://c8sn37isawjfw" path="res://player.gd" id="1_4flbx"]
+[ext_resource type="PackedScene" uid="uid://clfduv2q6pjrj" path="res://rocket_launcher.tscn" id="2_onrkg"]
 
 [sub_resource type="CylinderShape3D" id="CylinderShape3D_036b0"]
 height = 1.8
@@ -28,3 +29,6 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.35, 0)
 enabled = false
 shape = SubResource("BoxShape3D_i3pqv")
 target_position = Vector3(0, 0, 0)
+
+[node name="Weapon" parent="." unique_id=1914834387 instance=ExtResource("2_onrkg")]
+unique_name_in_owner = true
