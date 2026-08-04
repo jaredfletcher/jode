@@ -144,6 +144,18 @@ const NOCLIP_FAST := 3.0
 const NON_JUMP_SPEED := 140.0 * U
 
 
+# -------------------------------------------------------------- network ---
+
+## Send one state every N ticks. One is every tick, which for two players is
+## nothing. Raise it to prove the buffer is doing its job: playback should stay
+## smooth at three or four, because it interpolates across whatever gaps it is
+## given rather than depending on them being small.
+##
+## StateBuffer.INTERP_TICKS has to stay above twice this, or the buffer runs dry
+## between sends and holds instead of interpolating.
+const SEND_EVERY := 1
+
+
 # -------------------------------------------------------------- options ---
 
 @export_group("Options")
@@ -236,6 +248,15 @@ const NON_JUMP_SPEED := 140.0 * U
 
 
 # ---------------------------------------------------------------- nodes ---
+
+## Received states for a remote body. Unused on the player we own, which
+## simulates rather than plays back.
+var net := StateBuffer.new()
+
+## Placeholder body parts, built only for remote players. Held so the drawn
+## height can follow the received stance.
+var body_mesh: MeshInstance3D = null
+var nose_mesh: MeshInstance3D = null
 
 @onready var camera: Camera3D = %Camera3D
 @onready var collider: CollisionShape3D = %CollisionShape3D
@@ -333,9 +354,24 @@ func _ready() -> void:
 	curr_eye = global_position + Vector3(0.0, eye_height, 0.0)
 	prev_eye = curr_eye
 
-	# Wherever the spawner put us. This is only correct because the position is
-	# assigned before add_child, and add_child is what runs _ready.
+	# A fallback for a Player placed in a scene by hand. The spawner overwrites
+	# this with teleport immediately after add_child.
 	spawn_point = global_position
+
+	# Sub-resources in a scene are shared by every instance of it unless they
+	# are marked local to the scene, so without this every player would collide
+	# with the same cylinder and one person crouching would shrink everybody
+	# else's hull. Duplicated here rather than ticking a box in the inspector,
+	# because this is where the reason can be written down.
+	collider.shape = collider.shape.duplicate()
+	hull = collider.shape
+	clearance.shape = clearance.shape.duplicate()
+
+	# Set here rather than left to _update_pose, which only the local player
+	# runs. Without it a remote body keeps whatever height player.tscn happens
+	# to store, and its collider stops matching what is drawn.
+	hull.height = STAND_HEIGHT
+	collider.position.y = STAND_HEIGHT * 0.5
 
 	clearance.add_exception(self)
 	var box := clearance.shape as BoxShape3D
@@ -381,9 +417,38 @@ func _setup_local() -> void:
 ## remote player spawns before the local one.
 func _setup_remote() -> void:
 	camera.current = false
-	set_process(false)
 	set_physics_process(false)
 	set_process_unhandled_input(false)
+	_build_placeholder_body()
+
+
+## A body for remote players to be seen as. The local player is first person
+## and needs nothing, which is why nothing like this is in player.tscn.
+##
+## Scaffolding until there is a real model to load, so it is built in code
+## rather than added to the scene: it costs nothing to delete later, and it
+## cannot be mistaken for the real thing in the editor.
+func _build_placeholder_body() -> void:
+	# A cylinder rather than a capsule, so what is drawn is the hull that is
+	# actually there. A placeholder that lies about its own shape is worse than
+	# no placeholder.
+	body_mesh = MeshInstance3D.new()
+	var cylinder := CylinderMesh.new()
+	cylinder.height = STAND_HEIGHT
+	cylinder.top_radius = hull.radius
+	cylinder.bottom_radius = hull.radius
+	body_mesh.mesh = cylinder
+	body_mesh.position.y = STAND_HEIGHT * 0.5
+	add_child(body_mesh)
+
+	# A nose, so which way somebody is facing is readable from across the map.
+	# Without it the sync looks correct even when the yaw is not arriving.
+	nose_mesh = MeshInstance3D.new()
+	var box := BoxMesh.new()
+	box.size = Vector3(0.1, 0.1, 0.3)
+	nose_mesh.mesh = box
+	nose_mesh.position = Vector3(0.0, STAND_EYE, -hull.radius - 0.12)
+	add_child(nose_mesh)
 
 
 ## Whether the player counts as standing on ground this tick.
@@ -409,6 +474,15 @@ func _grounded() -> bool:
 func respawn() -> void:
 	_set_noclip(false)
 
+	# Input history, not just input. Leaving crouch_wanted set meant respawning
+	# while crouched in toggle mode re-ducked you a tick later, and leaving
+	# prev_buttons set meant a held key could read as a fresh press.
+	cmd.wish = Vector2.ZERO
+	cmd.buttons = 0
+	prev_buttons = 0
+	crouch_wanted = false
+	crouch_prev = false
+
 	mouse_delta = Vector2.ZERO
 	view_yaw = 0.0
 	view_pitch = 0.0
@@ -433,9 +507,19 @@ func respawn() -> void:
 	slide_cooldown = 0.0
 	slide_buffer = 0.0
 
-	global_position = spawn_point
 	eye_height = STAND_EYE
-	curr_eye = global_position + Vector3(0.0, eye_height, 0.0)
+	teleport(spawn_point)
+
+
+## Places the player and reseeds the camera samples, so the render-rate lerp
+## does not sweep across the jump.
+##
+## Separate from [method respawn] because spawning needs the same thing without
+## clearing state that was never set, and because it removes the old ordering
+## trap where the spawn position had to be assigned before add_child.
+func teleport(to: Vector3) -> void:
+	global_position = to
+	curr_eye = to + Vector3(0.0, eye_height, 0.0)
 	prev_eye = curr_eye
 
 
@@ -449,13 +533,22 @@ func _unhandled_input(event: InputEvent) -> void:
 		mouse_delta += event.relative
 
 
-## Renders the view. Rotation is applied at frame rate so mouse look stays
-## sharp; position is interpolated between the last two physics samples.
+## Draws whichever kind of player this is.
 ##
-## This mirrors Source's split between ExtraMouseSample and CreateMove: the
-## rendered angle leads the simulated one, while the command still carries a
+## Ours renders the view: rotation is applied at frame rate so mouse look stays
+## sharp, and position is interpolated between the last two physics samples.
+## This mirrors Source's split between ExtraMouseSample and CreateMove, where
+## the rendered angle leads the simulated one while the command still carries a
 ## single angle per tick.
-func _process(_delta: float) -> void:
+##
+## Somebody else's plays back from the state buffer instead. Both are the same
+## idea, that drawing happens at frame rate over samples taken at tick rate.
+## They differ only in how far behind the samples are and where they came from.
+func _process(delta: float) -> void:
+	if not is_local_player():
+		_draw_remote(delta)
+		return
+
 	var amount := M_YAW * sensitivity
 	view_yaw = wrapf(view_yaw - deg_to_rad(mouse_delta.x * amount), -PI, PI)
 	view_pitch = clampf(view_pitch - deg_to_rad(mouse_delta.y * amount), -PITCH_LIMIT, PITCH_LIMIT)
@@ -481,6 +574,7 @@ func _physics_process(delta: float) -> void:
 		_move_noclip(delta)
 		prev_eye = curr_eye
 		curr_eye = global_position + Vector3(0.0, eye_height, 0.0)
+		_broadcast_state()
 		return
 
 	# Source splits gravity across the move: half before, half after. Applying
@@ -536,6 +630,93 @@ func _physics_process(delta: float) -> void:
 	if weapon != null and weapon.has_method("update"):
 		weapon.update(delta, self, _aim_basis(), curr_eye, cmd.pressed(IN_ATTACK))
 
+	_broadcast_state()
+
+
+# =============================================================== network ===
+
+
+## Publishes what this player looks like right now.
+##
+## Sent from the tick loop so every state carries the tick it was true on,
+## which is what lets the receiver rebuild a timeline instead of a pile of
+## positions. What goes out is the result of the simulation, not its input:
+## remote bodies display, they do not simulate, so they need the hull height
+## that came out of the stance machine rather than the crouch key that went in.
+##
+## Velocity is deliberately absent. Nothing on the receiving end extrapolates,
+## so nothing needs it. It goes in when animation wants it and not before.
+func _broadcast_state() -> void:
+	if not multiplayer.has_multiplayer_peer() or not is_local_player():
+		return
+	if SEND_EVERY > 1 and cmd.tick % SEND_EVERY != 0:
+		return
+
+	_receive_state.rpc(
+		cmd.tick,
+		global_position,
+		view_yaw,
+		view_pitch,
+		hull.height,
+		eye_height,
+		move_state)
+
+
+@rpc("any_peer", "call_remote", "unreliable_ordered")
+func _receive_state(tick: int, pos: Vector3, yaw: float, pitch: float,
+		hull_h: float, eye_h: float, state: int) -> void:
+	# Only the peer that owns this body may say where it is. Declared
+	# "any_peer" with the check written out, rather than "authority", because a
+	# client's packet reaches the other clients by being relayed through the
+	# server, and this is the rule worth being able to read.
+	if multiplayer.get_remote_sender_id() != get_multiplayer_authority():
+		return
+
+	var s := StateBuffer.State.new()
+	s.tick = tick
+	s.position = pos
+	s.yaw = yaw
+	s.pitch = pitch
+	s.hull_height = hull_h
+	s.eye_height = eye_h
+	s.move_state = state
+	net.push(s)
+
+
+## Draws a remote body from the buffer.
+##
+## In _process rather than _physics_process, for the same reason the camera is:
+## the job is to produce a position for every frame drawn, not for every tick
+## simulated. A remote player interpolated at tick rate would be exactly as
+## steppy as one that was not interpolated at all.
+func _draw_remote(delta: float) -> void:
+	net.advance(delta)
+	var s := net.sample()
+	if s == null:
+		return
+
+	global_position = s.position
+	rotation.y = s.yaw
+	view_yaw = s.yaw
+	view_pitch = s.pitch
+	move_state = s.move_state
+
+	# Kept in step with the drawn hull so a crouching player is not shot
+	# through the head they no longer have there.
+	hull.height = s.hull_height
+	collider.position.y = s.hull_height * 0.5
+
+	eye_height = s.eye_height
+	curr_eye = global_position + Vector3(0.0, eye_height, 0.0)
+	prev_eye = curr_eye
+
+	if body_mesh != null:
+		(body_mesh.mesh as CylinderMesh).height = s.hull_height
+		body_mesh.position.y = s.hull_height * 0.5
+	if nose_mesh != null:
+		nose_mesh.position.y = s.eye_height
+		nose_mesh.rotation.x = s.pitch
+
 
 # ================================================================= input ===
 
@@ -545,6 +726,25 @@ func _physics_process(delta: float) -> void:
 ## be missed or counted twice.
 func _sample_input() -> void:
 	prev_buttons = cmd.buttons
+	cmd.tick += 1
+	cmd.yaw = view_yaw
+	cmd.pitch = view_pitch
+	rotation.y = view_yaw
+
+	# The menu does not stop the world in a session, so the simulation keeps
+	# running underneath it. An empty command is what standing still means
+	# here: friction brings you to a halt, gravity still applies, nothing
+	# fires, and noclip cannot be toggled from behind the menu. The tick keeps
+	# counting, because the command stream has no gap in it either.
+	#
+	# The button history is cleared with it, so holding a key through the menu
+	# does not read as a fresh press on the way out.
+	if menu_open:
+		cmd.wish = Vector2.ZERO
+		cmd.buttons = 0
+		prev_buttons = 0
+		return
+
 	cmd.wish = Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 
 	cmd.buttons = 0
@@ -558,11 +758,6 @@ func _sample_input() -> void:
 		cmd.buttons |= IN_NOCLIP
 	if Input.is_action_pressed("attack"):
 		cmd.buttons |= IN_ATTACK
-
-	cmd.yaw = view_yaw
-	cmd.pitch = view_pitch
-	rotation.y = view_yaw
-	cmd.tick += 1
 
 
 func _just_pressed(bit: int) -> bool:
@@ -951,9 +1146,15 @@ func _apply_vsync() -> void:
 	_apply_fps_cap()
 
 
-## Called by the pause menu so the UI cap can take over while paused.
+## Called by the pause menu. Also the switch that suppresses input, since the
+## menu no longer stops the simulation in a session.
 func set_menu_open(open: bool) -> void:
 	menu_open = open
+
+	# Motion queued before the mouse was released, or in the gap between that
+	# and this call, would otherwise land on the first frame back.
+	mouse_delta = Vector2.ZERO
+
 	_apply_fps_cap()
 
 
@@ -971,6 +1172,16 @@ func _aim_basis() -> Basis:
 ## jumps chain. Leaving the ground here matters too: staying in GROUND would
 ## run friction on the next tick and eat most of the impulse.
 func apply_blast(origin: Vector3, force_units: float, radius_units: float) -> void:
+	# Only the peer that owns this body may push it. A remote instance would
+	# take the impulse into a velocity nothing integrates, then have its
+	# position overwritten by the next state packet anyway.
+	#
+	# The consequence is that explosions do not cross the network yet: your
+	# rocket moves you and nobody else. That needs the blast itself to be sent,
+	# not the result of it, so each owner applies its own.
+	if not is_local_player():
+		return
+
 	var radius := radius_units * U
 	var centre := global_position + Vector3(0.0, _hull_height() * 0.5, 0.0)
 	var offset := centre - origin

@@ -29,6 +29,36 @@ corner_radius_bottom_left = 4
 [node name="World" type="Node3D" unique_id=2090805965]
 script = ExtResource("1_036b0")
 
+[node name="CSGBox3D" type="CSGBox3D" parent="." unique_id=1745936925]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.994155, 0, -36.00536)
+use_collision = true
+size = Vector3(300, 1, 300)
+material = ExtResource("1_aqk2v")
+
+[node name="CSGBox3D2" type="CSGBox3D" parent="." unique_id=1524034465]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 43, 1, -60)
+use_collision = true
+size = Vector3(86, 1, 132)
+material = ExtResource("1_aqk2v")
+
+[node name="CSGBox3D4" type="CSGBox3D" parent="." unique_id=1036159132]
+transform = Transform3D(0.92718387, 0.37460655, 0, -0.37460658, 0.9271838, 0, 0, 0, 0.99999994, 0, 7, 7)
+use_collision = true
+size = Vector3(47, 1, 6)
+material = ExtResource("1_aqk2v")
+
+[node name="CSGBox3D5" type="CSGBox3D" parent="." unique_id=1146025813]
+transform = Transform3D(-0.5299192, -0.848048, 8.742277e-08, -0.84804803, 0.5299192, 0, -4.632701e-08, -7.413871e-08, -0.9999999, -25.60943, 7.1979675, -60)
+use_collision = true
+size = Vector3(18, 2, 128)
+material = ExtResource("1_aqk2v")
+
+[node name="CSGBox3D6" type="CSGBox3D" parent="." unique_id=1827626372]
+transform = Transform3D(0.5299192, 0.848048, 0, -0.84804803, 0.5299192, -3.5527133e-15, -1.0658141e-14, 7.1054274e-15, 0.9999999, -17.029451, 9.647467, -60)
+use_collision = true
+size = Vector3(12, 2, 128)
+material = ExtResource("1_aqk2v")
+
 [node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1787301274]
 environment = SubResource("Environment_fj7yv")
 
@@ -40,25 +70,25 @@ shadow_enabled = true
 unique_name_in_owner = true
 transform = Transform3D(1, 0, 2.9802322e-08, 0, 1, 0, 0, 0, 1, 0, 2, 0)
 
-[node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=92120372]
+[node name="HUD" type="CanvasLayer" parent="." unique_id=92120372]
 script = ExtResource("3_tlwt5")
 
-[node name="VBoxContainer" type="VBoxContainer" parent="CanvasLayer" unique_id=502615538]
+[node name="VBoxContainer" type="VBoxContainer" parent="HUD" unique_id=502615538]
 offset_left = 8.0
 offset_top = 8.0
 offset_right = 9.0
 offset_bottom = 79.0
 theme_override_constants/separation = 1
 
-[node name="FPSLabel" type="Label" parent="CanvasLayer/VBoxContainer" unique_id=388504009]
+[node name="FPSLabel" type="Label" parent="HUD/VBoxContainer" unique_id=388504009]
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="SpeedLabel" type="Label" parent="CanvasLayer/VBoxContainer" unique_id=165553907]
+[node name="SpeedLabel" type="Label" parent="HUD/VBoxContainer" unique_id=165553907]
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="StateLabel" type="Label" parent="CanvasLayer/VBoxContainer" unique_id=2013020137]
+[node name="StateLabel" type="Label" parent="HUD/VBoxContainer" unique_id=2013020137]
 unique_name_in_owner = true
 layout_mode = 2
 
@@ -198,6 +228,83 @@ unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 10
 
+[node name="Multiplayer" type="ScrollContainer" parent="PauseMenu/Panel/MarginContainer/VBoxContainer/TabContainer" unique_id=1735170769]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+metadata/_tab_index = 3
+
+[node name="MarginContainer" type="MarginContainer" parent="PauseMenu/Panel/MarginContainer/VBoxContainer/TabContainer/Multiplayer" unique_id=505317637]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 16
+
+[node name="VBoxContainer" type="VBoxContainer" parent="PauseMenu/Panel/MarginContainer/VBoxContainer/TabContainer/Multiplayer/MarginContainer" unique_id=29888902]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 14
+
+[node name="StatusLabel" type="Label" parent="PauseMenu/Panel/MarginContainer/VBoxContainer/TabContainer/Multiplayer/MarginContainer/VBoxContainer" unique_id=373875047]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 3
+
+[node name="HSeparator" type="HSeparator" parent="PauseMenu/Panel/MarginContainer/VBoxContainer/TabContainer/Multiplayer/MarginContainer/VBoxContainer" unique_id=1385972283]
+layout_mode = 2
+
+[node name="AddressRow" type="VBoxContainer" parent="PauseMenu/Panel/MarginContainer/VBoxContainer/TabContainer/Multiplayer/MarginContainer/VBoxContainer" unique_id=1663878584]
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="Label" type="Label" parent="PauseMenu/Panel/MarginContainer/VBoxContainer/TabContainer/Multiplayer/MarginContainer/VBoxContainer/AddressRow" unique_id=435972708]
+layout_mode = 2
+text = "Address"
+
+[node name="AddressField" type="LineEdit" parent="PauseMenu/Panel/MarginContainer/VBoxContainer/TabContainer/Multiplayer/MarginContainer/VBoxContainer/AddressRow" unique_id=721792248]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="PortRow" type="VBoxContainer" parent="PauseMenu/Panel/MarginContainer/VBoxContainer/TabContainer/Multiplayer/MarginContainer/VBoxContainer" unique_id=1580219146]
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="Label" type="Label" parent="PauseMenu/Panel/MarginContainer/VBoxContainer/TabContainer/Multiplayer/MarginContainer/VBoxContainer/PortRow" unique_id=37380415]
+layout_mode = 2
+text = "Port"
+
+[node name="PortField" type="LineEdit" parent="PauseMenu/Panel/MarginContainer/VBoxContainer/TabContainer/Multiplayer/MarginContainer/VBoxContainer/PortRow" unique_id=1686039457]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="HSeparator2" type="HSeparator" parent="PauseMenu/Panel/MarginContainer/VBoxContainer/TabContainer/Multiplayer/MarginContainer/VBoxContainer" unique_id=1949634603]
+layout_mode = 2
+
+[node name="ButtonRow" type="HBoxContainer" parent="PauseMenu/Panel/MarginContainer/VBoxContainer/TabContainer/Multiplayer/MarginContainer/VBoxContainer" unique_id=389597938]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="HostButton" type="Button" parent="PauseMenu/Panel/MarginContainer/VBoxContainer/TabContainer/Multiplayer/MarginContainer/VBoxContainer/ButtonRow" unique_id=1184632138]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Host"
+
+[node name="JoinButton" type="Button" parent="PauseMenu/Panel/MarginContainer/VBoxContainer/TabContainer/Multiplayer/MarginContainer/VBoxContainer/ButtonRow" unique_id=857517002]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Join"
+
+[node name="LeaveButton" type="Button" parent="PauseMenu/Panel/MarginContainer/VBoxContainer/TabContainer/Multiplayer/MarginContainer/VBoxContainer/ButtonRow" unique_id=2014546824]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Disconnect"
+
 [node name="HBoxContainer" type="HBoxContainer" parent="PauseMenu/Panel/MarginContainer/VBoxContainer" unique_id=162978869]
 layout_mode = 2
 theme_override_constants/separation = 16
@@ -225,33 +332,3 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Reset"
-
-[node name="CSGBox3D" type="CSGBox3D" parent="." unique_id=1745936925]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.994155, 0, -36.00536)
-use_collision = true
-size = Vector3(300, 1, 300)
-material = ExtResource("1_aqk2v")
-
-[node name="CSGBox3D2" type="CSGBox3D" parent="." unique_id=1524034465]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 43, 1, -60)
-use_collision = true
-size = Vector3(86, 1, 132)
-material = ExtResource("1_aqk2v")
-
-[node name="CSGBox3D4" type="CSGBox3D" parent="." unique_id=1036159132]
-transform = Transform3D(0.92718387, 0.37460655, 0, -0.37460658, 0.9271838, 0, 0, 0, 0.99999994, 0, 7, 7)
-use_collision = true
-size = Vector3(47, 1, 6)
-material = ExtResource("1_aqk2v")
-
-[node name="CSGBox3D5" type="CSGBox3D" parent="." unique_id=1146025813]
-transform = Transform3D(-0.5299192, -0.848048, 8.742277e-08, -0.84804803, 0.5299192, 0, -4.632701e-08, -7.413871e-08, -0.9999999, -25.60943, 7.1979675, -60)
-use_collision = true
-size = Vector3(18, 2, 128)
-material = ExtResource("1_aqk2v")
-
-[node name="CSGBox3D6" type="CSGBox3D" parent="." unique_id=1827626372]
-transform = Transform3D(0.5299192, 0.848048, 0, -0.84804803, 0.5299192, -3.5527133e-15, -1.0658141e-14, 7.1054274e-15, 0.9999999, -17.029451, 9.647467, -60)
-use_collision = true
-size = Vector3(12, 2, 128)
-material = ExtResource("1_aqk2v")

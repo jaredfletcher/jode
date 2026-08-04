@@ -209,12 +209,26 @@ const BINDABLE := [
 	{"action": "crouch", "label": "Crouch"},
 	{"action": "sprint", "label": "Sprint"},
 	{"action": "noclip", "label": "Noclip"},
+	{"action": "attack", "label": "Attack"},
 ]
+
+
+# ------------------------------------------------------------- signals ---
+
+## Emitted by the Multiplayer tab. The menu knows nothing about sessions; the
+## world listens and decides what these mean, the same way the weapon is handed
+## what it needs rather than reaching for it.
+signal host_requested(port: int)
+signal join_requested(address: String, port: int)
+signal leave_requested
 
 
 # ------------------------------------------------------------ constants ---
 
 const CONFIG_PATH := "user://input.cfg"
+
+const DEFAULT_ADDRESS := "127.0.0.1"
+const DEFAULT_PORT := 27015
 
 ## Pixels scrolled per wheel notch when the wheel lands on a slider.
 const SCROLL_STEP := 48
@@ -235,6 +249,10 @@ var player: Player = null
 @onready var bind_list: VBoxContainer = %BindList
 @onready var toggle_list: VBoxContainer = %ToggleList
 @onready var reset_button: Button = %ResetButton
+
+@onready var status_label: Label = %StatusLabel
+@onready var address_field: LineEdit = %AddressField
+@onready var port_field: LineEdit = %PortField
 
 ## Slider containers keyed by group, matching the `group` field in SLIDERS.
 @onready var slider_lists := {
@@ -276,8 +294,23 @@ func _ready() -> void:
 
 	%ResumeButton.pressed.connect(_set_open.bind(false))
 	%RespawnButton.pressed.connect(_on_respawn)
-	%QuitButton.pressed.connect(get_tree().quit)
+	%QuitButton.pressed.connect(_on_quit)
 	reset_button.pressed.connect(_ask_reset)
+
+	# Defaults live here rather than in the scene, so the fallback in _port and
+	# what the field starts with cannot drift apart.
+	address_field.text = DEFAULT_ADDRESS
+	port_field.text = str(DEFAULT_PORT)
+
+	%HostButton.pressed.connect(func() -> void:
+		host_requested.emit(_port())
+	)
+	%JoinButton.pressed.connect(func() -> void:
+		join_requested.emit(address_field.text.strip_edges(), _port())
+	)
+	%LeaveButton.pressed.connect(func() -> void:
+		leave_requested.emit()
+	)
 
 	tabs.tab_changed.connect(func(_i: int) -> void: _update_reset_label())
 	_update_reset_label()
@@ -292,6 +325,15 @@ func _ready() -> void:
 ## actually in effect.
 func setup(p: Player) -> void:
 	player = p
+
+	# A player that spawns while the menu is open has just captured the mouse
+	# out from under it, since it has no way of knowing the menu is there. Both
+	# the pointer and the input suppression are re-asserted from the menu's own
+	# state, which is the thing that is actually true.
+	if player != null:
+		player.set_menu_open(visible)
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if visible else Input.MOUSE_MODE_CAPTURED
+
 	_capture_defaults()
 	_load_config()
 	_rebuild()
@@ -320,13 +362,29 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
+## Opens or closes the menu.
+##
+## The tree is only actually stopped when nobody else is in the session.
+## Freezing your own physics while everyone else keeps moving leaves you
+## standing still in their view and snaps you forward when you close the menu,
+## and on a listen server it would stop the world for the other player as well.
+##
+## The local player stops taking input either way, which is what makes opening
+## the menu safe mid-air in both modes. You just keep falling in one of them.
 func _set_open(open: bool) -> void:
 	_stop_listening()
 	visible = open
-	get_tree().paused = open
+	get_tree().paused = open and not multiplayer.has_multiplayer_peer()
 	if player != null:
 		player.set_menu_open(open)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open else Input.MOUSE_MODE_CAPTURED
+
+
+## Dropping the peer before quitting sends a real disconnect, so the other side
+## learns immediately instead of waiting for the connection to time out.
+func _on_quit() -> void:
+	multiplayer.multiplayer_peer = null
+	get_tree().quit()
 
 
 func _on_respawn() -> void:
@@ -380,7 +438,18 @@ func _current_group() -> String:
 	return tabs.get_tab_title(tabs.current_tab).to_lower()
 
 
+## Also hides the button on a tab that owns no settings, so it cannot promise
+## a reset that would do nothing. Derived from the tables rather than naming
+## the tab, so a new page gets the right behaviour for free.
 func _update_reset_label() -> void:
+	var group := _current_group()
+	var resettable := group == "controls"
+	for entry in _settings():
+		if entry.group == group:
+			resettable = true
+			break
+
+	reset_button.visible = resettable
 	reset_button.text = "Reset %s" % tabs.get_tab_title(tabs.current_tab)
 
 
@@ -672,6 +741,22 @@ func _load_config() -> void:
 	for prop in cfg.get_section_keys("settings"):
 		if prop in known:
 			player.set(prop, cfg.get_value("settings", prop))
+
+
+# ========================================================== multiplayer ===
+
+
+## Called by the world so the tab can report what the session is doing. The
+## menu never asks; it is told.
+func set_session_status(text: String) -> void:
+	status_label.text = text
+
+
+## Falls back rather than refusing, since a blank or nonsense port is a typo
+## and not worth an error dialog.
+func _port() -> int:
+	var value := port_field.text.strip_edges().to_int()
+	return value if value > 0 and value < 65536 else DEFAULT_PORT
 
 
 # ============================================================== helpers ===
