@@ -144,6 +144,43 @@ const NOCLIP_FAST := 3.0
 const NON_JUMP_SPEED := 140.0 * U
 
 
+# ---------------------------------------------------------------- blast ---
+
+## Source units per second of push, per point of damage. This is the shape
+## worth noticing about TF2 explosions: knockback is not its own number, it is
+## derived from damage, so the two cannot be tuned apart.
+const BLAST_PUSH_UNITS := 6.0
+
+## Blasting yourself off the ground is the weak version.
+const BLAST_PUSH_SELF_GROUND_UNITS := 5.0
+
+## Blasting yourself while already airborne pushes harder and, with the damage
+## cut below, costs less health. That trade is the entire reason a jump comes
+## before the rocket.
+const BLAST_PUSH_SELF_AIR_UNITS := 10.0
+
+## Damage kept from an airborne self blast.
+const BLAST_SELF_AIR_DAMAGE := 0.6
+
+## Push multiplier while crouched. Vanilla calls this a volume ratio.
+const BLAST_CROUCH_RATIO := 1.49091
+
+## Ceiling on what one blast may add.
+const BLAST_MAX_UNITS := 1000.0
+
+## The push is aimed from this far below where the blast actually was, which is
+## why explosions lift you rather than shoving you flat. Source does it in
+## CTFPlayer::OnTakeDamage_Alive.
+const BLAST_ORIGIN_DROP_UNITS := 10.0
+
+## Range over which splash damage to other people decays.
+const BLAST_FALLOFF_UNITS := 1024.0
+
+## Damage kept at the edge of the blast, as a fraction of the centre. Half
+## rather than nothing is what gives rim jumps their reach.
+const BLAST_EDGE_DAMAGE := 0.5
+
+
 # -------------------------------------------------------------- network ---
 
 ## Send one state every N ticks. One is every tick, which for two players is
@@ -248,6 +285,14 @@ const SEND_EVERY := 1
 
 
 # ---------------------------------------------------------------- nodes ---
+
+## Emitted when a blast lands, with the damage it did and who caused it.
+##
+## There is no health pool yet. This is the seam it attaches to, so the damage
+## that already had to be computed in order to derive the knockback is not
+## thrown away and worked out a second time later.
+signal hurt(amount: float, inflictor: Node3D)
+
 
 ## Received states for a remote body. Unused on the player we own, which
 ## simulates rather than plays back.
@@ -1165,13 +1210,22 @@ func _aim_basis() -> Basis:
 	return Basis.from_euler(Vector3(cmd.pitch, cmd.yaw, 0.0))
 
 
-## Adds an explosion impulse. Force falls off linearly to zero at the radius
-## edge and is applied along the vector from the blast to the hull centre.
+## Takes an explosion, as TF2 resolves one.
 ##
-## Existing velocity is kept rather than replaced, which is what makes rocket
-## jumps chain. Leaving the ground here matters too: staying in GROUND would
+## The weapon supplies damage and radius; everything about how hard this body
+## moves is decided here, because it turns on stance and ground contact that
+## the weapon cannot see. Knockback is derived from the damage rather than
+## being a second number, so a weaker rocket is a weaker jump by construction.
+##
+## Existing velocity is added to rather than replaced, which is what makes
+## rocket jumps chain. Leaving the ground matters too: staying in GROUND would
 ## run friction on the next tick and eat most of the impulse.
-func apply_blast(origin: Vector3, force_units: float, radius_units: float) -> void:
+##
+## One vanilla behaviour is deliberately not copied. TF2 forces you airborne
+## outright; here that falls out of the NON_JUMP_VELOCITY rule in _grounded, so
+## a blast that pushes you mostly sideways leaves you on the floor sliding
+## rather than launching you. That reads better with this movement code.
+func apply_blast(blast: Blast) -> void:
 	# Only the peer that owns this body may push it. A remote instance would
 	# take the impulse into a velocity nothing integrates, then have its
 	# position overwritten by the next state packet anyway.
@@ -1182,21 +1236,86 @@ func apply_blast(origin: Vector3, force_units: float, radius_units: float) -> vo
 	if not is_local_player():
 		return
 
-	var radius := radius_units * U
-	var centre := global_position + Vector3(0.0, _hull_height() * 0.5, 0.0)
-	var offset := centre - origin
-	var dist := offset.length()
-	if dist >= radius:
+	var is_self := blast.inflictor == self
+	var centre := blast_centre()
+
+	# Rings out sooner on yourself than on anyone else.
+	var radius := (blast.self_radius_units if is_self else blast.radius_units) * U
+
+	# Measured to the nearer of the feet and the centre, which approximates
+	# vanilla measuring to the closest point on the bounding box rather than to
+	# one origin. A body struck head on skips the measurement and takes the
+	# full centre value.
+	var dist := 0.0
+	if blast.direct_hit != self:
+		dist = minf(blast.origin.distance_to(global_position),
+				blast.origin.distance_to(centre))
+		if dist >= radius:
+			return
+
+	if not _blast_reaches(blast.origin, centre):
 		return
 
-	var dir := offset.normalized() if dist > 0.001 else Vector3.UP
-	velocity += dir * force_units * U * (1.0 - dist / radius)
+	var edge := blast.damage * BLAST_EDGE_DAMAGE
+	var damage := clampf(
+		remap(dist, 0.0, radius, blast.damage, edge), edge, blast.damage)
+
+	var push := BLAST_PUSH_UNITS
+	if is_self:
+		if _grounded():
+			push = BLAST_PUSH_SELF_GROUND_UNITS
+		else:
+			damage *= BLAST_SELF_AIR_DAMAGE
+			push = BLAST_PUSH_SELF_AIR_UNITS
+	elif blast.inflictor != null:
+		damage *= _blast_falloff(
+			blast.inflictor.global_position.distance_to(global_position))
+
+	# Crouching does not only tuck the hull in, it multiplies the push outright.
+	var ratio := BLAST_CROUCH_RATIO if is_crouched else 1.0
+	var force := minf(damage * ratio * push, BLAST_MAX_UNITS) * U
+
+	var from := blast.origin - Vector3(0.0, BLAST_ORIGIN_DROP_UNITS * U, 0.0)
+	var dir := from.direction_to(centre)
+	if dir.length_squared() < 0.001:
+		dir = Vector3.UP
+
+	velocity += dir * force
 
 	if move_state != Move.AIR:
 		move_state = Move.AIR
 		# Opens the instant duck window, so crouching straight after a rocket
 		# jump gains height the same way it does after a normal jump.
 		jump_time = JUMP_WINDOW
+
+	hurt.emit(damage, blast.inflictor)
+
+
+## Roughly Source's WorldSpaceCenter. Both the blast direction and the line of
+## sight test aim at this rather than at the feet, so a crouched body is pushed
+## from lower down simply because its centre is lower.
+func blast_centre() -> Vector3:
+	return global_position + Vector3(0.0, _hull_height() * 0.5, 0.0)
+
+
+## Whether anything solid stands between the blast and this body.
+##
+## Safe to trace only because the projectile lifts the blast a unit clear of
+## whatever it hit before detonating. A ray leaving a surface it is sitting
+## exactly on can go either way on a floating point comparison, which would
+## make rocket jumps fail at random.
+func _blast_reaches(origin: Vector3, centre: Vector3) -> bool:
+	var query := PhysicsRayQueryParameters3D.create(origin, centre)
+	query.exclude = [get_rid()]
+	return get_world_3d().direct_space_state.intersect_ray(query).is_empty()
+
+
+## Splash damage multiplier by how far the shot was taken from, for everyone
+## except the shooter. Ramps slightly above one at point blank before decaying,
+## matching TF2's distance curve rather than a plain falloff.
+func _blast_falloff(distance: float) -> float:
+	var t := clampf(distance / (BLAST_FALLOFF_UNITS * U), 0.0, 1.0)
+	return cubic_interpolate(1.25, 0.5, 0.25, 0.0, t)
 
 
 ## Jump velocity for the configured height, from v = sqrt(2 * g * h). Derived

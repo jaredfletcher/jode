@@ -1,8 +1,7 @@
 class_name Rocket
 extends Node3D
 
-## A projectile that sweeps forward each tick and applies a radial impulse on
-## contact.
+## A projectile that sweeps forward each tick and explodes on contact.
 ##
 ## Movement is a raycast rather than an Area3D because at 1100 units per second
 ## the rocket covers about 0.42 metres per tick, which is enough to tunnel
@@ -18,11 +17,17 @@ const U := Player.U
 ## Muzzle velocity. TF2 rockets travel at 1100.
 @export var speed_units: float = 1100.0
 
-## Impulse applied at the centre of the blast, falling off to zero at the edge.
-@export var blast_force_units: float = 500.0
+## Damage at the centre of the blast. Knockback is derived from this on the
+## receiving end, so this one number sets how hard the rocket both hurts and
+## throws. TF2 rockets do 90.
+@export var damage: float = 90.0
 
-## TF2 rockets use a 146 unit blast radius.
+## Falloff distance for anyone who is not the shooter. TF2 uses 146.
 @export var blast_radius_units: float = 146.0
+
+## Falloff distance for the shooter. Shorter, so your own damage drops off
+## faster than it does for everyone else.
+@export var self_blast_radius_units: float = 121.0
 
 ## Seconds before an unobstructed rocket removes itself.
 @export var lifetime: float = 6.0
@@ -54,16 +59,21 @@ func _ready() -> void:
 ## them from _ready instead and they capture wherever the node happened to be
 ## before the launcher moved it, which draws the first frame as a streak from
 ## the origin.
-func launch(from: Vector3, dir: Vector3, aim: Basis, by: Player) -> void:
+func launch(from: Vector3, dir: Vector3, by: Player) -> void:
 	global_position = from
-	global_basis = aim
 	direction = dir
 	shooter = by
+
+	# Points along its own path rather than along the shooter's view, which are
+	# not the same once the muzzle offset and the aim convergence are in.
+	if not dir.is_zero_approx():
+		var up := Vector3.UP if absf(dir.dot(Vector3.UP)) < 0.99 else Vector3.FORWARD
+		look_at(from + dir, up)
 
 	prev_position = from
 	curr_position = from
 	visual.global_position = from
-	visual.global_basis = aim
+	visual.global_basis = global_basis
 
 
 func _process(_delta: float) -> void:
@@ -78,25 +88,45 @@ func _physics_process(delta: float) -> void:
 		return
 
 	var step := direction * speed_units * U * delta
-	var space := get_world_3d().direct_space_state
-	var query := PhysicsRayQueryParameters3D.create(global_position, global_position + step)
+	var query := PhysicsRayQueryParameters3D.create(
+		global_position, global_position + step)
 	if shooter != null:
 		query.exclude = [shooter.get_rid()]
 
-	var hit := space.intersect_ray(query)
-	global_position = hit.position if not hit.is_empty() else global_position + step
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+
+	if hit.is_empty():
+		global_position += step
+	else:
+		# Lifted a unit clear of the surface before detonating, which vanilla
+		# does in CTFBaseRocket::Explode. It is also what makes the line of
+		# sight test on the receiving end safe: a ray leaving a surface it sits
+		# exactly on can go either way on a floating point comparison, and a
+		# rocket jump that fails one time in ten is worse than one that never
+		# works.
+		global_position = hit.position + hit.normal * U
 
 	prev_position = curr_position
 	curr_position = global_position
 
 	if not hit.is_empty():
-		_explode()
+		_explode(hit.collider as Node3D)
 
 
-## Impulses everything in the blastable group. Splitting this from the player
-## means anything that can be pushed only has to implement apply_blast.
-func _explode() -> void:
+## Hands the explosion to everything in the blastable group and lets each decide
+## what it means. Splitting it this way means anything that can be pushed only
+## has to implement apply_blast, and the weapon never has to know what it hit.
+func _explode(struck: Node3D) -> void:
+	var blast := Blast.new()
+	blast.origin = global_position
+	blast.inflictor = shooter
+	blast.damage = damage
+	blast.radius_units = blast_radius_units
+	blast.self_radius_units = self_blast_radius_units
+	blast.direct_hit = struck
+
 	for node in get_tree().get_nodes_in_group("blastable"):
 		if node.has_method("apply_blast"):
-			node.apply_blast(global_position, blast_force_units, blast_radius_units)
+			node.apply_blast(blast)
+
 	queue_free()
