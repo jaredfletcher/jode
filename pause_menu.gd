@@ -227,7 +227,7 @@ signal leave_requested
 
 const CONFIG_PATH := "user://input.cfg"
 
-const DEFAULT_ADDRESS := "127.0.0.1"
+const DEFAULT_ADDRESS := "joe.jared0.com"
 const DEFAULT_PORT := 27015
 
 ## Pixels scrolled per wheel notch when the wheel lands on a slider.
@@ -339,6 +339,18 @@ func setup(p: Player) -> void:
 	_rebuild()
 
 
+## Recomputes whether the tree should be stopped.
+##
+## The answer turns on two things, whether this menu is open and whether anyone
+## else is in the session, and the second changes without the menu being
+## touched. Called by the world whenever a session starts or ends, because
+## hosting from an open menu otherwise left the world stopped until the menu
+## was closed again, which meant standing frozen in the view of whoever had
+## just joined.
+func refresh_pause() -> void:
+	get_tree().paused = visible and not multiplayer.has_multiplayer_peer()
+
+
 ## Uses _input rather than _unhandled_input so a keypress during rebinding is
 ## seen before any focused Button treats it as a click.
 func _input(event: InputEvent) -> void:
@@ -374,7 +386,7 @@ func _input(event: InputEvent) -> void:
 func _set_open(open: bool) -> void:
 	_stop_listening()
 	visible = open
-	get_tree().paused = open and not multiplayer.has_multiplayer_peer()
+	refresh_pause()
 	if player != null:
 		player.set_menu_open(open)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open else Input.MOUSE_MODE_CAPTURED
