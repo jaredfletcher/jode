@@ -6,14 +6,13 @@ extends Node3D
 ## because a session needs one per peer and the scene cannot know how many that
 ## will be.
 ##
-## Spawning is plain RPCs rather than a MultiplayerSpawner. The replication
-## that matters in this project is going to be hand written anyway, and doing
-## the spawn by hand keeps the roster, the ownership rule and the teardown
-## visible in one file instead of split between a script and a node's inspector
-## settings.
+## Spawning is plain RPCs rather than a MultiplayerSpawner. The replication that
+## matters here is hand written anyway, and spawning by hand keeps the roster,
+## the ownership rule and the teardown in one file rather than split between a
+## script and a node's inspector settings.
 
 
-const PLAYER_SCENE := preload("res://player.tscn")
+const PLAYER_SCENE := preload("res://player/player.tscn")
 
 ## Where players enter the world. One point for now; a list of them with
 ## round-robin selection is the obvious next version.
@@ -345,10 +344,7 @@ func _despawn(peer_id: int) -> void:
 	if p == null:
 		return
 
-	# Removed before freeing, because queue_free is deferred and the name would
-	# otherwise still be taken if that peer reconnected inside the same frame.
-	players.remove_child(p)
-	p.queue_free()
+	_free_player(p)
 
 
 func _clear_players() -> void:
@@ -358,8 +354,14 @@ func _clear_players() -> void:
 	pause_menu.setup(null)
 
 	for p in players.get_children():
-		players.remove_child(p)
-		p.queue_free()
+		_free_player(p)
+
+
+## Removed from the tree before freeing, because queue_free is deferred and the
+## name would otherwise still be taken if that peer reconnected this frame.
+func _free_player(p: Node) -> void:
+	players.remove_child(p)
+	p.queue_free()
 
 
 func _attach_local(p: Player) -> void:

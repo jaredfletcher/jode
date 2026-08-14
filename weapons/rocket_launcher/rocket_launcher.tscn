@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://clfduv2q6pjrj"]
+
+[ext_resource type="Script" uid="uid://dyksw6nhuq7yy" path="res://weapons/rocket_launcher/rocket_launcher.gd" id="1_f4skl"]
+[ext_resource type="PackedScene" uid="uid://cbdoxxd6tbeqo" path="res://weapons/rocket_launcher/rocket.tscn" id="2_c2pqj"]
+
+[node name="rocket_launcher" type="Node3D" unique_id=1914834387]
+script = ExtResource("1_f4skl")
+rocket_scene = ExtResource("2_c2pqj")
