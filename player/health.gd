@@ -1,30 +1,20 @@
 class_name Health
 extends Node
 
-## A pool of health belonging to whatever this node is a child of.
+## A health pool for whatever it's attached to.
 ##
-## A component rather than fields on Player, so a crate, a door or a dropped bag
-## can have health without inheriting anything from the player. It knows nothing
-## about its owner: something calls [method take_damage], and it reports what
-## happened through signals.
-##
-## Everything that displays health subscribes to those signals rather than
-## reading the value. That matters more here than usual, because the plan is for
-## the readout to stop being a HUD label and become an object in the world, and
-## a subscriber can be swapped without this file changing.
+## Knows nothing about its owner. Something calls take_damage() and it reports
+## the result through signals, so anything (a player, a crate, a door) can have
+## health, and displays just subscribe to health_changed.
 
-
-## Current and maximum, whenever either moves. Carries both so a listener never
-## has to reach back for the other one to draw a bar.
+## Emitted whenever current or maximum changes.
 signal health_changed(current: float, maximum: float)
 
-## Fired once, on the transition to zero. [param inflictor] is whoever caused
-## it, or null when nothing did.
+## Emitted once, on reaching zero. inflictor is null when nothing caused it.
 signal died(inflictor: Node3D)
 
-## Fired on the transition back from zero.
+## Emitted when going from zero back above it.
 signal revived
-
 
 @export var maximum: float = 100.0
 
@@ -39,12 +29,10 @@ func is_alive() -> bool:
 	return current > 0.0
 
 
-## Applies damage. Negative amounts heal, which is why healing is not a separate
-## method: a bandage and a rocket differ in sign, not in kind.
+## Negative amounts heal.
 ##
-## Damage is applied by the peer that owns the body being damaged, so nobody has
-## to agree about hit registration. It follows the same rule as movement, where
-## each machine is the authority on itself and simply tells everyone the result.
+## Damage is applied by the peer that owns the damaged body, the same rule as
+## movement: each machine is authoritative over itself and broadcasts the result.
 func take_damage(amount: float, inflictor: Node3D = null) -> void:
 	if amount == 0.0:
 		return
@@ -59,19 +47,14 @@ func take_damage(amount: float, inflictor: Node3D = null) -> void:
 		revived.emit()
 
 
-## Refills the pool without reporting a revival, for a respawn rather than a
-## rescue. The body being restored is a new life, not the old one continuing.
+## Refills without emitting revived. A respawn is a new life, not a revive.
 func reset() -> void:
 	current = maximum
 	health_changed.emit(current, maximum)
 
 
-## Overwrites the pool from a value that arrived over the network.
-##
-## Deliberately not routed through [method take_damage]. A received value is
-## already the result of somebody else's arithmetic, and re-deriving a delta
-## from it would emit a death on whoever happened to see the packet that crossed
-## zero, which is not the same thing as dying.
+## Sets the pool from a value received over the network. Doesn't go through
+## take_damage(), since that would fire died on every peer that sees the update.
 func apply_remote(value: float, max_value: float) -> void:
 	maximum = max_value
 	current = value

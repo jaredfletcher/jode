@@ -1,12 +1,11 @@
 class_name Hud
 extends CanvasLayer
 
-## Read off the enum rather than written out again, so the names cannot drift
-## from the states they label.
+## Debug readout: fps, speed, movement state and health.
+
 var state_names := Player.Move.keys()
 
-## Assigned through [method setup] rather than exported. The player is spawned
-## at runtime, so there is no NodePath in the world scene to bake.
+## Set by the world through setup(), since players spawn at runtime.
 var player: Player = null
 
 @onready var fps_label: Label = $VBoxContainer/FPSLabel
@@ -15,10 +14,18 @@ var player: Player = null
 @onready var health_label: Label = $VBoxContainer/HealthLabel
 
 
-## Health is drawn from its signal rather than read every frame, so this file is
-## a stand-in for whatever ends up showing it. A wristwatch or a walkie talkie
-## subscribes to the same signal and this one is deleted, with nothing in Health
-## or Player needing to change.
+func _process(_delta: float) -> void:
+	fps_label.text = "%3d fps" % Engine.get_frames_per_second()
+	if player == null:
+		return
+	# Measured from how far the body moved, so it reads zero when you're stuck
+	# even if velocity says otherwise.
+	speed_label.text = "%4.0f u/s" % (player.actual_speed() / Player.U)
+	state_label.text = state_names[player.move_state]
+
+
+## Health is shown from its signal rather than polled, so this label can be
+## swapped for an in-world display later without touching Health or Player.
 func setup(p: Player) -> void:
 	if player != null and is_instance_valid(player):
 		player.health.health_changed.disconnect(_on_health_changed)
@@ -34,11 +41,3 @@ func setup(p: Player) -> void:
 
 func _on_health_changed(current: float, maximum: float) -> void:
 	health_label.text = "%3.0f / %3.0f hp" % [current, maximum]
-
-
-func _process(_delta: float) -> void:
-	fps_label.text = "%3d fps" % Engine.get_frames_per_second()
-	if player == null:
-		return
-	speed_label.text = "%4.0f u/s" % (player.flat_speed() / Player.U)
-	state_label.text = state_names[player.move_state]

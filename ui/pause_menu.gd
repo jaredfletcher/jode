@@ -1,19 +1,19 @@
 class_name PauseMenu
 extends CanvasLayer
 
-## Pause menu, settings, and key rebinding.
+## Pause menu, settings and key rebinding.
 ##
-## Every setting is declared once in one of the three tables below. The build
-## functions, the reset, and the save and load all iterate those tables, so
-## adding a setting means adding a dictionary entry and nothing else.
-##
-## Each entry's `group` names the tab it appears in and must match that tab
-## node's title in lower case.
+## Every setting is declared once in the tables below. Building the controls,
+## resetting and saving all iterate those tables, so adding a setting is just a
+## new entry. An entry's "group" is the tab it shows on and must match that tab's
+## title in lower case.
 
+## Emitted from the Multiplayer tab. The world decides what these mean.
+signal host_requested(port: int)
+signal join_requested(address: String, port: int)
+signal leave_requested
 
-# ------------------------------------------------------- setting tables ---
-
-## Boolean options, rendered as CheckButtons.
+## Boolean options, shown as CheckButtons.
 const TOGGLES := [
 	{
 		"prop": "auto_bhop",
@@ -53,8 +53,8 @@ const TOGGLES := [
 	},
 ]
 
-## Numeric options, rendered as a slider and spinbox pair. Entries sharing a
-## `section` must be contiguous, since the header is emitted on change.
+## Numeric options, shown as a slider and spinbox pair. Entries sharing a
+## "section" must be next to each other, since a header is added when it changes.
 const SLIDERS := [
 	{
 		"prop": "sensitivity",
@@ -199,7 +199,7 @@ const SLIDERS := [
 	},
 ]
 
-## Rebindable actions, rendered as a label, a bind button, and a clear button.
+## Rebindable actions, shown as a label, a bind button and a clear button.
 const BINDABLE := [
 	{"action": "move_forward", "label": "Move Forward"},
 	{"action": "move_back", "label": "Move Back"},
@@ -212,19 +212,6 @@ const BINDABLE := [
 	{"action": "attack", "label": "Attack"},
 ]
 
-
-# ------------------------------------------------------------- signals ---
-
-## Emitted by the Multiplayer tab. The menu knows nothing about sessions; the
-## world listens and decides what these mean, the same way the weapon is handed
-## what it needs rather than reaching for it.
-signal host_requested(port: int)
-signal join_requested(address: String, port: int)
-signal leave_requested
-
-
-# ------------------------------------------------------------ constants ---
-
 const CONFIG_PATH := "user://input.cfg"
 
 const DEFAULT_ADDRESS := "joe.jared0.com"
@@ -233,17 +220,31 @@ const DEFAULT_PORT := 27015
 ## Pixels scrolled per wheel notch when the wheel lands on a slider.
 const SCROLL_STEP := 48
 
-## Type tags written into the saved bind entries.
+## Type tags for saved binds.
 const BIND_NONE := -1
 const BIND_KEY := 0
 const BIND_MOUSE := 1
 
+## InputMap's "all devices" id. Rebound events use it so they match whatever
+## device id the keyboard or mouse reports.
+const ALL_DEVICES := -1
 
-# ---------------------------------------------------------------- nodes ---
-
-## Assigned through [method setup] rather than exported. The player is spawned
-## at runtime now, so there is no NodePath in the world scene to bake.
+## Set by the world through setup(), since players spawn at runtime.
 var player: Player = null
+
+## Player settings as they were before the saved config was applied, so a reset
+## goes back to real defaults rather than the last save.
+var defaults := {}
+
+## Input Map events from project.godot, captured once before any saved binds load.
+var default_binds := {}
+
+## Bind buttons by action, so one row can be relabelled without a rebuild.
+var bind_buttons := {}
+
+var listening_action := ""
+var listening_button: Button = null
+var confirm: ConfirmationDialog
 
 @onready var tabs: TabContainer = %TabContainer
 @onready var bind_list: VBoxContainer = %BindList
@@ -254,33 +255,12 @@ var player: Player = null
 @onready var address_field: LineEdit = %AddressField
 @onready var port_field: LineEdit = %PortField
 
-## Slider containers keyed by group, matching the `group` field in SLIDERS.
+## Slider containers by group, matching the "group" field in SLIDERS.
 @onready var slider_lists := {
 	"controls": %SliderList,
-	"gameplay": %DebugSliderList,
+	"gameplay": %GameplaySliderList,
 	"base": %BaseSliderList,
 }
-
-
-# ---------------------------------------------------------------- state ---
-
-## Player property values captured before the saved config is applied, so a
-## reset restores the real defaults rather than the last saved values.
-var defaults := {}
-
-## Input events captured from the Input Map for the same reason.
-var default_binds := {}
-
-## Bind buttons keyed by action, so a rebind can relabel one row rather than
-## rebuilding the list.
-var bind_buttons := {}
-
-var listening_action := ""
-var listening_button: Button = null
-var confirm: ConfirmationDialog
-
-
-# ================================================================ setup ===
 
 
 func _ready() -> void:
@@ -297,8 +277,6 @@ func _ready() -> void:
 	%QuitButton.pressed.connect(_on_quit)
 	reset_button.pressed.connect(_ask_reset)
 
-	# Defaults live here rather than in the scene, so the fallback in _port and
-	# what the field starts with cannot drift apart.
 	address_field.text = DEFAULT_ADDRESS
 	port_field.text = str(DEFAULT_PORT)
 
@@ -315,43 +293,12 @@ func _ready() -> void:
 	tabs.tab_changed.connect(func(_i: int) -> void: _update_reset_label())
 	_update_reset_label()
 
-
-## Called by the world once the local player exists. Everything that reads or
-## writes player properties lives here rather than in _ready, because at scene
-## load there is no player to read.
-##
-## Order still matters: defaults must be captured before the config overwrites
-## them, and the controls must be built after it, so they show the values
-## actually in effect.
-func setup(p: Player) -> void:
-	player = p
-
-	# A player that spawns while the menu is open has just captured the mouse
-	# out from under it, since it has no way of knowing the menu is there. Both
-	# the pointer and the input suppression are re-asserted from the menu's own
-	# state, which is the thing that is actually true.
-	if player != null:
-		player.set_menu_open(visible)
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if visible else Input.MOUSE_MODE_CAPTURED
-
-	_capture_defaults()
-	_load_config()
-	_rebuild()
+	# Runs before the world's _ready, so the Input Map is still untouched here.
+	_capture_default_binds()
 
 
-## Recomputes whether the tree should be stopped.
-##
-## The answer turns on two things, whether this menu is open and whether anyone
-## else is in the session, and the second changes without the menu being
-## touched. Called by the world whenever a session starts or ends: hosting from
-## an open menu would otherwise leave the world stopped until the menu closed,
-## which is standing frozen in the view of whoever just joined.
-func refresh_pause() -> void:
-	get_tree().paused = visible and not multiplayer.has_multiplayer_peer()
-
-
-## Uses _input rather than _unhandled_input so a keypress during rebinding is
-## seen before any focused Button treats it as a click.
+## Uses _input rather than _unhandled_input so a key pressed while rebinding is
+## seen before a focused Button treats it as a click.
 func _input(event: InputEvent) -> void:
 	if listening_action != "":
 		if event is InputEventKey and event.keycode == KEY_ESCAPE:
@@ -365,7 +312,7 @@ func _input(event: InputEvent) -> void:
 			listening_button = null
 			_assign(action, event)
 			get_viewport().set_input_as_handled()
-		# Nothing else may see input while capturing a bind.
+		# Swallow everything else while capturing a bind.
 		return
 
 	if event.is_action_pressed("ui_cancel"):
@@ -373,15 +320,38 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
-## Opens or closes the menu.
-##
-## The tree is only actually stopped when nobody else is in the session.
-## Freezing your own physics while everyone else keeps moving leaves you
-## standing still in their view and snaps you forward when you close the menu,
-## and on a listen server it would stop the world for the other player as well.
-##
-## The local player stops taking input either way, which is what makes opening
-## the menu safe mid-air in both modes. You just keep falling in one of them.
+## Called by the world when the local player changes (or goes away).
+func setup(p: Player) -> void:
+	player = p
+
+	# A player spawned while the menu is open captures the mouse, not knowing the
+	# menu is there. Re-assert the menu's state.
+	if player != null:
+		player.set_menu_open(visible)
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if visible else Input.MOUSE_MODE_CAPTURED
+
+	# Defaults before the config overwrites them, controls after it's applied.
+	_capture_default_settings()
+	_load_config()
+	_rebuild()
+
+
+## Only pauses the tree when playing solo. Called by the world whenever a session
+## starts or ends, since that changes the answer without the menu being touched.
+func refresh_pause() -> void:
+	get_tree().paused = visible and not multiplayer.has_multiplayer_peer()
+
+
+## Called by the world to show what the session is doing.
+func set_session_status(text: String) -> void:
+	status_label.text = text
+
+
+#region Open and close
+
+## The local player stops taking input either way. The tree is only paused when
+## nobody else is connected; pausing your own physics in a session would freeze
+## you in everyone else's view (and stop the world for them on a listen server).
 func _set_open(open: bool) -> void:
 	_stop_listening()
 	visible = open
@@ -391,8 +361,8 @@ func _set_open(open: bool) -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open else Input.MOUSE_MODE_CAPTURED
 
 
-## Dropping the peer before quitting sends a real disconnect, so the other side
-## learns immediately instead of waiting for the connection to time out.
+## Clearing the peer first sends a proper disconnect instead of making the other
+## side wait for a timeout.
 func _on_quit() -> void:
 	multiplayer.multiplayer_peer = null
 	get_tree().quit()
@@ -403,21 +373,24 @@ func _on_respawn() -> void:
 		player.respawn()
 	_set_open(false)
 
+#endregion
 
-# ============================================================= defaults ===
 
+#region Defaults and reset
 
-## Every settable entry across both tables. Both shapes carry `prop` and
-## `group`, which is all the defaults and reset code needs.
+## Every toggle and slider entry. Both carry "prop" and "group".
 func _settings() -> Array:
 	return TOGGLES + SLIDERS
 
 
-func _capture_defaults() -> void:
+func _capture_default_settings() -> void:
 	if player == null:
 		return
 	for entry in _settings():
 		defaults[entry.prop] = player.get(entry.prop)
+
+
+func _capture_default_binds() -> void:
 	for b in BINDABLE:
 		var copies := []
 		for e in InputMap.action_get_events(b.action):
@@ -425,8 +398,8 @@ func _capture_defaults() -> void:
 		default_binds[b.action] = copies
 
 
-## Appends the captured default to a tooltip. Reading it back rather than
-## hardcoding it means the tooltip cannot drift from the export.
+## Appends the default value to a tooltip, read from the captured defaults so it
+## can't drift from the export.
 func _tip(prop: String, base: String) -> String:
 	if not defaults.has(prop):
 		return base
@@ -441,17 +414,12 @@ func _tip(prop: String, base: String) -> String:
 	return "%s\n\nDefault: %s" % [base, text]
 
 
-# ================================================================ reset ===
-
-
-## The active tab's title, lower cased, matching the `group` field.
+## The active tab's title in lower case, matching the "group" field.
 func _current_group() -> String:
 	return tabs.get_tab_title(tabs.current_tab).to_lower()
 
 
-## Also hides the button on a tab that owns no settings, so it cannot promise
-## a reset that would do nothing. Derived from the tables rather than naming
-## the tab, so a new page gets the right behaviour for free.
+## Hides the reset button on tabs that have no settings.
 func _update_reset_label() -> void:
 	var group := _current_group()
 	var resettable := group == "controls"
@@ -469,8 +437,7 @@ func _ask_reset() -> void:
 	confirm.popup_centered()
 
 
-## Restores defaults for the active tab only, so tuning one page cannot wipe
-## another.
+## Resets the active tab only.
 func _do_reset() -> void:
 	var group := _current_group()
 
@@ -488,9 +455,10 @@ func _do_reset() -> void:
 	_save_config()
 	_rebuild()
 
+#endregion
 
-# ================================================================ build ===
 
+#region Building controls
 
 func _rebuild() -> void:
 	_build_sliders()
@@ -527,7 +495,7 @@ func _build_sliders() -> void:
 	if player == null:
 		return
 
-	# Tracked per group so each tab emits its own section headers.
+	# Per group, so each tab gets its own section headers.
 	var last_section := {}
 
 	for s in SLIDERS:
@@ -574,7 +542,7 @@ func _build_sliders() -> void:
 		slider.tooltip_text = tip
 		slider.gui_input.connect(_block_scroll.bind(slider))
 
-		# Both extend Range, so sharing keeps them in step with one handler.
+		# Both are Ranges, so sharing keeps them in sync with one handler.
 		slider.share(spin)
 		slider.value_changed.connect(func(v: float) -> void:
 			player.set(prop, v)
@@ -623,9 +591,10 @@ func _build_binds() -> void:
 		row.add_child(clear)
 		bind_list.add_child(row)
 
+#endregion
 
-# ============================================================ rebinding ===
 
+#region Rebinding
 
 func _start_listening(action: String, button: Button) -> void:
 	_stop_listening()
@@ -642,45 +611,53 @@ func _stop_listening() -> void:
 	listening_button = null
 
 
-## Converts a physical key code back through the current layout, so a QWERTY
-## user sees W and an AZERTY user sees Z for the same physical key.
+## Shows the key for the current layout, so the same physical key reads W on
+## QWERTY and Z on AZERTY.
 func _bind_text(action: String) -> String:
 	var events := InputMap.action_get_events(action)
 	if events.is_empty():
 		return "unbound"
 	var e := events[0]
 	if e is InputEventKey:
-		return OS.get_keycode_string(DisplayServer.keyboard_get_keycode_from_physical(e.physical_keycode))
+		return OS.get_keycode_string(
+				DisplayServer.keyboard_get_keycode_from_physical(e.physical_keycode))
 	return e.as_text()
 
 
-## Relabels the existing buttons rather than rebuilding the rows. queue_free
-## is deferred, so a rebuild would leave old and new buttons overlapping for a
-## frame, which reads as the rebind not taking.
+## Relabels the existing buttons instead of rebuilding. queue_free() is deferred,
+## so a rebuild would show old and new rows together for a frame.
 func _refresh_labels() -> void:
 	for action in bind_buttons:
 		bind_buttons[action].text = _bind_text(action)
 
 
-## Strips a captured event down to the field that identifies the input. A raw
-## mouse event also carries a screen position and click count, which would
-## make is_match behave unpredictably.
+func _key_event(physical_keycode: Key) -> InputEventKey:
+	var k := InputEventKey.new()
+	k.device = ALL_DEVICES
+	# Physical, so a bind follows the key's position rather than its printed letter.
+	k.physical_keycode = physical_keycode
+	return k
+
+
+func _mouse_event(button_index: MouseButton) -> InputEventMouseButton:
+	var m := InputEventMouseButton.new()
+	m.device = ALL_DEVICES
+	m.button_index = button_index
+	return m
+
+
+## Rebuilds a captured event with only the fields that identify the input. Raw
+## mouse events also carry position and click count, which confuse is_match().
 func _clean(event: InputEvent) -> InputEvent:
 	if event is InputEventKey:
-		var k := InputEventKey.new()
-		# Physical, so a binding follows the key's location rather than the
-		# letter printed on it.
-		k.physical_keycode = event.physical_keycode
-		return k
-	var m := InputEventMouseButton.new()
-	m.button_index = (event as InputEventMouseButton).button_index
-	return m
+		return _key_event(event.physical_keycode)
+	return _mouse_event((event as InputEventMouseButton).button_index)
 
 
 func _assign(action: String, event: InputEvent) -> void:
 	var clean := _clean(event)
 
-	# Taking a key from whichever action held it keeps bindings unique.
+	# Take the input away from whichever action had it, so binds stay unique.
 	for other in BINDABLE:
 		for existing in InputMap.action_get_events(other.action):
 			if existing.is_match(clean, false):
@@ -691,13 +668,12 @@ func _assign(action: String, event: InputEvent) -> void:
 	_save_config()
 	_refresh_labels()
 
+#endregion
 
-# ========================================================== persistence ===
 
+#region Config file
 
-## Binds are stored as [type, code] in a single section. Keeping the type tag
-## alongside the code avoids an ordering dependency between separate key and
-## mouse sections, and leaves room for a third input type later.
+## Binds are saved as [type, code] pairs in one section.
 func _save_config() -> void:
 	var cfg := ConfigFile.new()
 
@@ -705,8 +681,8 @@ func _save_config() -> void:
 		var action: String = b.action
 		var events := InputMap.action_get_events(action)
 		if events.is_empty():
-			# Explicit, so a cleared bind stays cleared rather than falling
-			# back to the Input Map default.
+			# Saved explicitly, so a cleared bind stays cleared instead of falling
+			# back to the project default.
 			cfg.set_value("binds", action, [BIND_NONE, 0])
 			continue
 		var e := events[0]
@@ -732,20 +708,15 @@ func _load_config() -> void:
 			var entry: Array = cfg.get_value("binds", action)
 			InputMap.action_erase_events(action)
 			if entry[0] == BIND_KEY:
-				var k := InputEventKey.new()
-				k.physical_keycode = entry[1]
-				InputMap.action_add_event(action, k)
+				InputMap.action_add_event(action, _key_event(entry[1]))
 			elif entry[0] == BIND_MOUSE:
-				var m := InputEventMouseButton.new()
-				m.button_index = entry[1]
-				InputMap.action_add_event(action, m)
+				InputMap.action_add_event(action, _mouse_event(entry[1]))
 
 	if player == null or not cfg.has_section("settings"):
 		return
 
-	# Only properties still declared in the tables are restored. Without this
-	# a stale key from a removed setting would be applied silently, with no
-	# control left to change it back.
+	# Only restore settings that still exist in the tables, so a removed setting
+	# can't be applied from an old save with no control left to change it.
 	var known := PackedStringArray()
 	for entry in _settings():
 		known.append(entry.prop)
@@ -753,24 +724,15 @@ func _load_config() -> void:
 		if prop in known:
 			player.set(prop, cfg.get_value("settings", prop))
 
-
-# ========================================================== multiplayer ===
-
-
-## Called by the world so the tab can report what the session is doing. The
-## menu never asks; it is told.
-func set_session_status(text: String) -> void:
-	status_label.text = text
+#endregion
 
 
-## Falls back rather than refusing, since a blank or nonsense port is a typo
-## and not worth an error dialog.
+#region Helpers
+
+## Falls back to the default port on a blank or invalid entry.
 func _port() -> int:
 	var value := port_field.text.strip_edges().to_int()
 	return value if value > 0 and value < 65536 else DEFAULT_PORT
-
-
-# ============================================================== helpers ===
 
 
 func _find_scroll(node: Node) -> ScrollContainer:
@@ -782,8 +744,7 @@ func _find_scroll(node: Node) -> ScrollContainer:
 	return null
 
 
-## Stops the wheel from nudging a value when it happens to land on a slider,
-## and forwards the scroll to the enclosing page instead.
+## Stops the mouse wheel changing a slider's value and scrolls the page instead.
 func _block_scroll(event: InputEvent, control: Control) -> void:
 	if not event is InputEventMouseButton:
 		return
@@ -791,8 +752,8 @@ func _block_scroll(event: InputEvent, control: Control) -> void:
 	if b.button_index != MOUSE_BUTTON_WHEEL_UP and b.button_index != MOUSE_BUTTON_WHEEL_DOWN:
 		return
 
-	# Both the press and the release must be accepted, or the release reaches
-	# the slider; only the press should scroll, or one notch moves two steps.
+	# Accept both press and release so neither reaches the slider, but only
+	# scroll on press or one notch moves two steps.
 	control.accept_event()
 	if not b.pressed:
 		return
@@ -800,3 +761,5 @@ func _block_scroll(event: InputEvent, control: Control) -> void:
 	var sc := _find_scroll(control)
 	if sc != null:
 		sc.scroll_vertical += -SCROLL_STEP if b.button_index == MOUSE_BUTTON_WHEEL_UP else SCROLL_STEP
+
+#endregion

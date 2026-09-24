@@ -1,35 +1,26 @@
 class_name Blast
 extends RefCounted
 
-## One explosion, as described by the thing that caused it.
+## One explosion, as described by whatever caused it.
 ##
-## A struct rather than a parameter list, because the list is going to grow:
-## grenades, self-damage toggles and damage types all belong here, and each one
-## would otherwise be threaded through every blastable in the game.
-##
-## Carries only what the weapon knows. How hard a particular body gets thrown is
-## that body's business, since it depends on stance and ground contact the
-## weapon has no view of.
+## Only carries what the weapon knows. How hard a body gets pushed depends on its
+## stance and ground contact, so each receiver works that out in apply_blast().
 
-
-## Where the explosion happened, already lifted clear of whatever surface it
-## went off against.
+## Where it went off, already lifted clear of the surface it hit.
 var origin := Vector3.ZERO
 
-## Who fired it. Used to tell a self blast from someone else's, and to measure
-## the range the shot was taken from.
+## Who fired it. Used to tell self blasts apart and to measure shot distance.
 var inflictor: Node3D = null
 
-## Damage at the centre. Everything else, knockback included, is derived from
-## this rather than tuned separately.
+## Damage at the centre. Knockback is derived from this.
 var damage := 90.0
 
-## Falloff distance for anyone who is not the shooter.
+## Falloff radius for everyone except the shooter.
 var radius_units := 146.0
 
-## Falloff distance for the shooter, which rings out sooner.
+## Falloff radius for the shooter. Smaller, so self damage drops off sooner.
 var self_radius_units := 121.0
 
-## Whatever the projectile struck head on, or null if it hit the world. A body
-## hit directly takes centre damage regardless of where its origin sits.
+## What the projectile hit directly, or null if it hit the world. A direct hit
+## takes full centre damage.
 var direct_hit: Node3D = null

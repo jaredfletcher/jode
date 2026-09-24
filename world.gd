@@ -1,41 +1,32 @@
 extends Node3D
 
-## Owns the player instances and the session they belong to.
+## Owns the session and the player instances in it.
 ##
-## Players are created at runtime rather than sitting in the scene file,
-## because a session needs one per peer and the scene cannot know how many that
-## will be.
-##
-## Spawning is plain RPCs rather than a MultiplayerSpawner. The replication that
-## matters here is hand written anyway, and spawning by hand keeps the roster,
-## the ownership rule and the teardown in one file rather than split between a
-## script and a node's inspector settings.
-
+## Players are spawned at runtime, one per peer. Spawning uses plain RPCs rather
+## than a MultiplayerSpawner so the roster, the ownership rule and the teardown
+## all live in this file.
 
 const PLAYER_SCENE := preload("res://player/player.tscn")
 
-## Where players enter the world. One point for now; a list of them with
-## round-robin selection is the obvious next version.
+# TODO: multiple spawn points with round-robin selection.
 const SPAWN := Vector3(0.0, 2.0, 0.0)
 
 ## Clients, not counting the host.
 const MAX_PEERS := 7
 
-## Seconds to wait for a join before giving up. ENet does time out on its own
-## eventually, but not quickly and not always, and a status line that says
-## "connecting" indefinitely tells you nothing about which of the two it is.
+## Seconds to wait for a join before giving up. ENet times out on its own
+## eventually, but slowly and not always.
 const JOIN_TIMEOUT := 8.0
 
-## How often to check on a hostname lookup, and how long to let one run.
+## How often to poll a hostname lookup, and how long to let it run.
 const RESOLVE_POLL := 0.05
 const RESOLVE_TIMEOUT := 5.0
 
-
-## Bumped whenever a join starts or finishes, so a timeout that fires late can
-## tell whether it still belongs to the attempt in progress.
+## Bumped whenever a join starts or finishes, so a late timeout can tell whether
+## it still belongs to the current attempt.
 var join_attempt := 0
 
-## An outstanding hostname lookup, or -1 when there is none.
+## The outstanding hostname lookup, if any.
 var resolve_id := IP.RESOLVER_INVALID_ID
 var resolve_host := ""
 var resolve_port := 0
@@ -43,15 +34,10 @@ var resolve_attempt := 0
 var resolve_deadline := 0
 
 @onready var players: Node3D = %Players
-
-# Direct paths rather than exports, so there is nothing to wire in the editor.
-# Rename either node and this breaks loudly, which is the intent.
 @onready var hud: Hud = $HUD
 @onready var pause_menu: PauseMenu = $PauseMenu
 
 
-## Children are ready before their parent, so the menu has already resolved its
-## own nodes by the time these connect to its signals.
 func _ready() -> void:
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
@@ -67,17 +53,13 @@ func _ready() -> void:
 	_report("Not connected.")
 
 
-# =============================================================== session ===
+#region Session
 
-
-## Tears down whatever session exists and rebuilds the world around a single
-## local player.
+## Tears down any session and rebuilds the world around one local player. Also
+## the startup path, so launching and leaving end up in exactly the same state.
 ##
-## Also the startup path, so launching the game and leaving a session end in
-## exactly the same state rather than in two states that merely look alike.
-##
-## Says nothing about why it was called. Callers know that, and one of them
-## defers this, so a status set here would land after the reason and erase it.
+## Doesn't set a status message. One caller defers this, so a message set here
+## would overwrite the caller's reason.
 func _go_solo() -> void:
 	join_attempt += 1
 	_cancel_resolve()
@@ -103,12 +85,12 @@ func _host(port: int) -> void:
 		_report("Could not open port %d. Error %d." % [port, err])
 		return
 
-	# The solo player is already named 1, which is the id a server takes, so
-	# hosting does not have to respawn or rename anything.
+	# The solo player is already named 1, which is the server's id, so nothing
+	# needs respawning.
 	multiplayer.multiplayer_peer = peer
 	pause_menu.refresh_pause()
 	_report("Hosting on port %d. This machine is %s on the local network."
-		% [port, _local_addresses()])
+			% [port, _local_addresses()])
 
 
 func _join(address: String, port: int) -> void:
@@ -128,15 +110,10 @@ func _join(address: String, port: int) -> void:
 		_connect_to(address, address, port, attempt)
 		return
 
-	# ENet accepts a domain name and resolves it itself, but it does that on
-	# the calling thread, so a name that nothing answers for freezes the game
-	# until DNS gives up. Doing it here keeps the frame moving, separates a
-	# name that cannot be found from a host that did not reply, and lets the
-	# status line show which address the name landed on.
-	#
-	# That last part is the useful one when a domain points at a home
-	# connection. A record that has gone stale looks exactly like a closed
-	# port otherwise.
+	# ENet can resolve names itself, but it blocks the main thread while it does.
+	# Resolving here keeps the game responsive, tells "name not found" apart from
+	# "host didn't answer", and lets the status show the resolved address (handy
+	# when a domain points at a home connection whose IP may have changed).
 	_report("Looking up %s." % address)
 	resolve_host = address
 	resolve_port = port
@@ -152,13 +129,11 @@ func _join(address: String, port: int) -> void:
 	_poll_resolve()
 
 
-## Checks on an outstanding lookup, and re-arms itself until it finishes.
+## Checks on the outstanding lookup and re-arms itself until it finishes.
 ##
-## Driven by a scene tree timer rather than by _process, which is not a style
-## choice. This node's process mode is inherited, and the menu stops the tree
-## whenever it is open in a solo game, so _process does not run at the exact
-## moment a join is started from that menu. A SceneTreeTimer keeps running
-## while the tree is stopped, which is the property needed here.
+## Uses a SceneTreeTimer rather than _process because the tree is paused while
+## the menu is open in a solo game, which is exactly when a join gets started.
+## SceneTreeTimers keep running while paused.
 func _poll_resolve() -> void:
 	if resolve_id == IP.RESOLVER_INVALID_ID:
 		return
@@ -185,14 +160,13 @@ func _poll_resolve() -> void:
 
 	if ip.is_empty():
 		_report(("Could not find %s. Check the spelling, and that it has an A "
-			+ "record pointing at the host.") % host)
+				+ "record pointing at the host.") % host)
 		return
 
 	_connect_to(host, ip, port, attempt)
 
 
-## Drops any outstanding lookup. The resolver holds onto finished items until
-## they are erased, so this is not only bookkeeping.
+## The resolver keeps finished items until they're erased.
 func _cancel_resolve() -> void:
 	if resolve_id != IP.RESOLVER_INVALID_ID:
 		IP.erase_resolve_item(resolve_id)
@@ -200,11 +174,7 @@ func _cancel_resolve() -> void:
 	resolve_host = ""
 
 
-## Opens the connection once there is an address to open it to.
-##
-## Takes the name and the address separately so the status line can show both.
-## Seeing what a domain actually resolved to is the first thing worth checking
-## when it points at a connection whose address may have moved.
+## Takes the hostname and the resolved IP separately so the status can show both.
 func _connect_to(host: String, ip: String, port: int, attempt: int) -> void:
 	# The attempt may have been abandoned while the lookup was running.
 	if attempt != join_attempt:
@@ -223,40 +193,37 @@ func _connect_to(host: String, ip: String, port: int, attempt: int) -> void:
 	_report("Connecting to %s:%d." % [shown, port])
 
 	get_tree().create_timer(JOIN_TIMEOUT).timeout.connect(
-		func() -> void: _abandon_join(attempt, shown, port))
+			func() -> void: _abandon_join(attempt, shown, port))
 
 
-## Gives up on a join that never landed.
-##
-## Matched against the attempt counter rather than cancelled, because a
-## SceneTreeTimer cannot be stopped once started. A timer left over from an
-## attempt that already resolved simply finds a number it does not recognise.
+## Gives up on a join that never landed. SceneTreeTimers can't be cancelled, so
+## a leftover timer from an earlier attempt just finds a stale attempt number.
 func _abandon_join(attempt: int, address: String, port: int) -> void:
 	if attempt != join_attempt:
 		return
 
 	_go_solo()
 	_report(("No answer from %s:%d. Check that the host is running, that UDP "
-		+ "%d reaches it, and that this is not your own public address seen "
-		+ "from inside your own network.") % [address, port, port])
+			+ "%d reaches it, and that this is not your own public address seen "
+			+ "from inside your own network.") % [address, port, port])
+
+#endregion
 
 
-# =============================================================== signals ===
-
+#region Multiplayer signals
 
 func _on_peer_connected(id: int) -> void:
 	if not multiplayer.is_server():
 		return
 
-	# The newcomer needs everyone already here. Sent before it is spawned, so
-	# this loop cannot accidentally include it.
+	# Send the newcomer everyone already here, before it's spawned itself.
 	for p in players.get_children():
 		_spawn_remote.rpc_id(id, p.name.to_int(), p.global_position)
 
-	# And everyone, the newcomer included, needs the newcomer.
+	# Then tell everyone, newcomer included, about the newcomer.
 	_spawn_remote.rpc(id, SPAWN)
 
-	# Declared call_remote, so the server still has to do it locally.
+	# The RPC is call_remote, so the server spawns its own copy here.
 	spawn_player(id, SPAWN)
 	_report_roster()
 
@@ -272,16 +239,15 @@ func _on_peer_disconnected(id: int) -> void:
 func _on_connected() -> void:
 	join_attempt += 1
 
-	# The solo player is named 1, and 1 belongs to the host. Cleared here
-	# rather than when the attempt started, so a join that never lands leaves
-	# you standing in the world you were already in instead of an empty one.
+	# The solo player is named 1, which belongs to the host. Cleared here rather
+	# than when the join started, so a failed join leaves you where you were.
 	_clear_players()
 	_report("Connected as peer %d. Waiting for the world." % multiplayer.get_unique_id())
 
 
-## Both of these arrive from inside multiplayer.poll, and _go_solo drops the
-## peer that is doing the polling. Deferred so the teardown happens after the
-## API has finished with it rather than underneath it.
+# These two fire from inside multiplayer.poll(), and _go_solo() drops the peer
+# being polled, so the teardown is deferred until the poll is done.
+
 func _on_connection_failed() -> void:
 	join_attempt += 1
 	_go_solo.call_deferred()
@@ -292,12 +258,14 @@ func _on_server_disconnected() -> void:
 	_go_solo.call_deferred()
 	_report("Host closed the session.")
 
+#endregion
 
-# =================================================================== rpc ===
 
+#region RPC
 
-## Declared on World, whose multiplayer authority is the default of 1, so the
-## annotation alone means only the server may call these.
+# World's multiplayer authority is the default of 1, so "authority" here means
+# only the server can call these.
+
 @rpc("authority", "call_remote", "reliable")
 func _spawn_remote(peer_id: int, at: Vector3) -> void:
 	var p := spawn_player(peer_id, at)
@@ -311,29 +279,24 @@ func _despawn_remote(peer_id: int) -> void:
 	_despawn(peer_id)
 	_report_roster()
 
+#endregion
 
-# ================================================================ roster ===
 
+#region Roster
 
-## Creates the player owned by [param peer_id].
-##
-## The node is named after the peer id, and Player._ready derives its authority
-## from that name. One string carries ownership to every machine, with no
-## second message that could disagree with it.
+## Creates the player owned by peer_id. The node is named after the peer id and
+## Player._ready() derives its authority from that name.
 func spawn_player(peer_id: int, at: Vector3) -> Player:
-	# Replaces rather than collides. Godot renames a duplicate instead of
-	# erroring, and a node called @1@2 parses to an id of zero, so it would
-	# quietly fall back to the default authority and hand somebody a body they
-	# cannot drive.
+	# Replace any existing node with this name. Godot would otherwise rename the
+	# duplicate to something like @1@2, which parses to peer id 0 and silently
+	# hands the body to the wrong authority.
 	_despawn(peer_id)
 
 	var p := PLAYER_SCENE.instantiate() as Player
 	p.name = str(peer_id)
 	players.add_child(p)
 
-	# After add_child, because teleport reseeds the camera interpolation
-	# samples and those only exist once _ready has run. Global rather than
-	# local, so a transform on the Players node cannot shift the spawn.
+	# After add_child, since teleport() seeds camera samples set up in _ready().
 	p.teleport(at)
 	p.spawn_point = at
 	return p
@@ -341,15 +304,13 @@ func spawn_player(peer_id: int, at: Vector3) -> Player:
 
 func _despawn(peer_id: int) -> void:
 	var p := players.get_node_or_null(NodePath(str(peer_id)))
-	if p == null:
-		return
-
-	_free_player(p)
+	if p != null:
+		_free_player(p)
 
 
 func _clear_players() -> void:
-	# Told first, because both hold a reference that is about to be freed and a
-	# freed Node does not compare equal to null.
+	# Detach the UI first. A freed Node doesn't compare equal to null, so they
+	# can't be left holding a reference to it.
 	hud.setup(null)
 	pause_menu.setup(null)
 
@@ -357,8 +318,8 @@ func _clear_players() -> void:
 		_free_player(p)
 
 
-## Removed from the tree before freeing, because queue_free is deferred and the
-## name would otherwise still be taken if that peer reconnected this frame.
+## Removed from the tree before freeing, since queue_free() is deferred and the
+## name would still be taken if that peer reconnected in the same frame.
 func _free_player(p: Node) -> void:
 	players.remove_child(p)
 	p.queue_free()
@@ -368,14 +329,17 @@ func _attach_local(p: Player) -> void:
 	hud.setup(p)
 	pause_menu.setup(p)
 
+#endregion
+
+
+#region Status
 
 func _report(text: String) -> void:
 	pause_menu.set_session_status(text)
 
 
-## Addresses this machine can actually be reached on, so hosting can say what
-## to hand out instead of leaving you to go and find it. Loopback and
-## link-local are dropped because nobody else can use them.
+## LAN addresses this machine can be reached on, so hosting can show what to give
+## out. Loopback and link-local are skipped.
 func _local_addresses() -> String:
 	var found: PackedStringArray = []
 	for address in IP.get_local_addresses():
@@ -388,11 +352,12 @@ func _local_addresses() -> String:
 	return ", ".join(found) if not found.is_empty() else "not detected"
 
 
-## Counts what is actually in the world rather than what the peer list claims,
-## since the spawned roster is the thing the player can see.
+## Counts what's actually spawned rather than the peer list.
 func _report_roster() -> void:
 	if not multiplayer.has_multiplayer_peer():
 		return
 	var n := players.get_child_count()
 	var role := "Hosting" if multiplayer.is_server() else "Connected"
 	_report("%s. %d player%s in the session." % [role, n, "" if n == 1 else "s"])
+
+#endregion

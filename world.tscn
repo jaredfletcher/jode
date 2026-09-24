@@ -29,31 +29,31 @@ corner_radius_bottom_left = 4
 [node name="World" type="Node3D" unique_id=2090805965]
 script = ExtResource("1_036b0")
 
-[node name="CSGBox3D" type="CSGBox3D" parent="." unique_id=1745936925]
+[node name="Floor" type="CSGBox3D" parent="." unique_id=1745936925]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.994155, 0, -36.00536)
 use_collision = true
 size = Vector3(300, 1, 300)
 material = ExtResource("1_aqk2v")
 
-[node name="CSGBox3D2" type="CSGBox3D" parent="." unique_id=1524034465]
+[node name="Platform" type="CSGBox3D" parent="." unique_id=1524034465]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 43, 1, -60)
 use_collision = true
 size = Vector3(86, 1, 132)
 material = ExtResource("1_aqk2v")
 
-[node name="CSGBox3D4" type="CSGBox3D" parent="." unique_id=1036159132]
+[node name="WalkRamp" type="CSGBox3D" parent="." unique_id=1036159132]
 transform = Transform3D(0.92718387, 0.37460655, 0, -0.37460658, 0.9271838, 0, 0, 0, 0.99999994, 0, 7, 7)
 use_collision = true
 size = Vector3(47, 1, 6)
 material = ExtResource("1_aqk2v")
 
-[node name="CSGBox3D5" type="CSGBox3D" parent="." unique_id=1146025813]
+[node name="SurfRampWest" type="CSGBox3D" parent="." unique_id=1146025813]
 transform = Transform3D(-0.5299192, -0.848048, 8.742277e-08, -0.84804803, 0.5299192, 0, -4.632701e-08, -7.413871e-08, -0.9999999, -25.60943, 7.1979675, -60)
 use_collision = true
 size = Vector3(18, 2, 128)
 material = ExtResource("1_aqk2v")
 
-[node name="CSGBox3D6" type="CSGBox3D" parent="." unique_id=1827626372]
+[node name="SurfRampEast" type="CSGBox3D" parent="." unique_id=1827626372]
 transform = Transform3D(0.5299192, 0.848048, 0, -0.84804803, 0.5299192, -3.5527133e-15, -1.0658141e-14, 7.1054274e-15, 0.9999999, -17.029451, 9.647467, -60)
 use_collision = true
 size = Vector3(12, 2, 128)
@@ -68,7 +68,6 @@ shadow_enabled = true
 
 [node name="Players" type="Node3D" parent="." unique_id=2036742585]
 unique_name_in_owner = true
-transform = Transform3D(1, 0, 2.9802322e-08, 0, 1, 0, 0, 0, 1, 0, 2, 0)
 
 [node name="HUD" type="CanvasLayer" parent="." unique_id=92120372]
 script = ExtResource("3_tlwt5")
@@ -194,7 +193,7 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 20
 
-[node name="DebugSliderList" type="VBoxContainer" parent="PauseMenu/Panel/MarginContainer/VBoxContainer/TabContainer/Gameplay/MarginContainer/VBoxContainer" unique_id=1947065443]
+[node name="GameplaySliderList" type="VBoxContainer" parent="PauseMenu/Panel/MarginContainer/VBoxContainer/TabContainer/Gameplay/MarginContainer/VBoxContainer" unique_id=1947065443]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 10

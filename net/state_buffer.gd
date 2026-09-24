@@ -1,52 +1,36 @@
 class_name StateBuffer
 extends RefCounted
 
-## A timeline of states received from one other peer, played back on a delay.
+## Snapshot interpolation for one remote player.
 ##
-## This is the whole answer to why remote players look smooth. Packets do not
-## arrive on tick boundaries or evenly, so assigning each one on receipt makes a
-## body jump between positions rather than move between them. Instead every
-## state is filed under the tick it was true on, and playback runs slightly
-## behind the newest, interpolating between the two samples that bracket it.
-##
-## The cost is seeing everyone a fixed distance in the past. The benefit is that
-## every position drawn actually happened. Nothing is guessed forward, so
-## nothing has to be taken back, and taking it back is what reads as rubber
-## banding.
-##
-## Source calls the delay cl_interp and defaults it to 100ms.
+## Each received state is stored under the tick it happened on, and playback runs
+## a few ticks behind the newest one, blending between the two states either side
+## of the playback time. Remote players are shown slightly in the past, but
+## everything drawn really happened, so there's nothing to correct and no rubber
+## banding. Source calls this delay cl_interp (100ms by default).
 
-
-## Playback delay behind the newest received state, in sender ticks. The only
-## real knob: too small and an ordinary late packet leaves nothing to draw, too
-## large and everyone lags further behind where they actually are. Four ticks is
-## around 60ms at 66, which absorbs a couple of dropped or bunched packets.
-##
-## Wants to stay above two send intervals. Raise Player.SEND_EVERY and this has
-## to come up with it.
+## Playback delay behind the newest state, in ticks. Too small and a late packet
+## leaves nothing to draw; too large and everyone lags further behind. Four ticks
+## is about 60ms at 66 Hz. Keep it above twice Player.SEND_EVERY.
 const INTERP_TICKS := 4.0
 
-## Most the clock may run fast or slow to close a gap, as a fraction of real
-## time. Small enough not to be readable as speeding up or slowing down.
+## Most the playback clock can speed up or slow down to close a gap, as a
+## fraction of real time. Small enough not to be noticeable.
 const CATCHUP := 0.08
 
-## Gain on the clock correction. Error is measured in ticks.
+## Gain on the clock correction, per tick of error.
 const CATCHUP_GAIN := 0.1
 
-## Error past which nudging is pointless and the clock jumps. A stall or a
-## hiccup, rather than ordinary jitter.
+## Past this much error the clock jumps instead of drifting. That's a stall,
+## not ordinary jitter.
 const RESYNC_TICKS := 30.0
 
-## Ceiling on stored samples, so a stalled reader cannot grow without bound.
+## Cap on stored states so a stalled reader can't grow without bound.
 const MAX_SAMPLES := 64
 
 
-## One received state.
-##
-## Deliberately the outputs of the sender's simulation rather than its inputs. A
-## remote body is not simulating anything, it is showing what already happened
-## somewhere else, so it wants the hull height that came out of the stance
-## machine and not the crouch key that went in.
+## One received state. These are the sender's simulation outputs (hull height,
+## not the crouch key), since the remote copy only displays them.
 class State:
 	var tick := 0
 	var position := Vector3.ZERO
@@ -57,21 +41,17 @@ class State:
 	var move_state := 0
 
 
-var samples := []
+var samples: Array[State] = []
 
-## Current playback point, in sender ticks, fractional between them.
+## Current playback time in sender ticks. Fractional between ticks.
 var play_time := 0.0
 
-## Clear until the first state lands, so the clock starts on real data rather
-## than winding up from zero.
+## False until the first state arrives, so the clock starts from real data.
 var started := false
 
 
-## Files a received state.
-##
-## Out of order arrivals are dropped rather than sorted. The channel is already
-## unreliable_ordered, so anything late has been discarded before it gets here,
-## and a state older than one already held has nothing to add to the timeline.
+## Stores a received state. Anything not newer than the latest held state is
+## dropped. The channel is unreliable_ordered, so that should already be rare.
 func push(s: State) -> void:
 	if not samples.is_empty():
 		var newest: State = samples.back()
@@ -83,17 +63,14 @@ func push(s: State) -> void:
 		samples.remove_at(0)
 
 
-## Advances the playback clock by [param delta] real seconds.
+## Advances the playback clock by delta seconds.
 ##
-## The clock free-runs at real time and is nudged toward the target rather than
-## snapped onto it. Snapping every frame would put playback exactly where it
-## belongs and still look terrible, because the target only moves when a packet
-## lands, so the motion would inherit the arrival pattern of the network. This
-## is the part that separates smooth from merely correct.
+## The clock runs at real time and gets nudged toward the target rather than
+## snapped to it. The target only moves when a packet arrives, so snapping would
+## make motion follow the network's arrival pattern.
 ##
-## Sender and local ticks are the same unit because both peers run the project's
-## physics rate, which is read rather than stored so there is no second copy of
-## it to drift.
+## Sender and local ticks are the same unit because every peer runs the same
+## physics tick rate.
 func advance(delta: float) -> void:
 	if samples.is_empty():
 		return
@@ -109,13 +86,11 @@ func advance(delta: float) -> void:
 		var rate := 1.0 + clampf(error * CATCHUP_GAIN, -CATCHUP, CATCHUP)
 		play_time += delta * float(Engine.physics_ticks_per_second) * rate
 
-	# Never run past the newest thing held. There is nothing out there to draw,
-	# and letting the clock wander into the future while a sender is stalled
-	# only buys a jump when it comes back.
+	# Never play past the newest state. There's nothing there to draw, and
+	# drifting ahead during a stall just causes a jump when packets resume.
 	play_time = minf(play_time, float(newest.tick))
 
-	# Drop what the clock has passed, keeping the one sample still needed as the
-	# left hand side of the current span.
+	# Drop states the clock has passed, keeping one as the start of the current span.
 	while samples.size() >= 2:
 		var second: State = samples[1]
 		if float(second.tick) > play_time:
@@ -142,19 +117,14 @@ func sample() -> State:
 			return _blend(from, to, t)
 		from = to
 
-	# Playback has run past everything held, so the next state has not arrived.
-	# Hold on the newest rather than carry on along the last direction: a brief
-	# stall reads better than sliding somewhere wrong and being yanked back when
-	# the truth turns up.
+	# Played past everything held. Hold the newest rather than extrapolating, since
+	# a short freeze looks better than guessing wrong and snapping back.
 	var last: State = samples.back()
 	return last
 
 
-## Angles go through lerp_angle because yaw is wrapped to +/- PI and a plain
-## lerp takes the long way round the seam.
-##
-## move_state is not blended at all. It is a label rather than a quantity, and
-## the label that held across the span is the one it started on.
+## Angles use lerp_angle so yaw doesn't take the long way round at +/- PI.
+## move_state is a label, not a quantity, so it isn't blended.
 func _blend(from: State, to: State, t: float) -> State:
 	var s := State.new()
 	s.tick = from.tick
